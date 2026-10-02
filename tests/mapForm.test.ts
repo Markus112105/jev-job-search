@@ -2,13 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { ProfileSchema } from "../src/profile/schema.js";
 import { PROFILE_KEYS, profileFacts, valueFor } from "../src/profile/fieldKeys.js";
-import { authForCountry, planField, questionsFor, valueForJob } from "../src/forms/mapForm.js";
+import { authForCountry, educationDatePlan, planField, questionsFor, valueForJob } from "../src/forms/mapForm.js";
 import { FieldsDump, type DumpedField } from "../src/forms/fields.js";
 import type { Job } from "../src/jobs/normalize.js";
 
 const profile = ProfileSchema.parse(JSON.parse(readFileSync(new URL("../data/profile.example.json", import.meta.url), "utf8")));
 const job = (locations: string[]): Job => ({ id: "j", source: "t", company: "Acme", title: "SWE Intern", url: "https://x", ats: "greenhouse", locations, postedAt: null, terms: [], sponsorship: "unknown", degrees: [], category: null });
-const field = (over: Partial<DumpedField>): DumpedField => ({ id: "f0", selector: "#x", kind: "text", name: "", label: "", hint: "", placeholder: "", required: false, value: "", options: [], accept: "", maxLength: null, autocomplete: "", buttonGroup: false, ...over });
+const field = (over: Partial<DumpedField>): DumpedField => ({ id: "f0", selector: "#x", kind: "text", name: "", label: "", hint: "", placeholder: "", required: false, value: "", options: [], accept: "", maxLength: null, autocomplete: "", buttonGroup: false, section: "", ...over });
 
 describe("profile field keys", () => {
   it("has a value or a deliberate null for every key", () => {
@@ -51,6 +51,22 @@ describe("questionsFor", () => {
     expect((q.f1 as { criteria: Record<string, string> }).criteria).toMatchObject({ o0: "Yes", o1: "No" });
     expect(q.f2?.type).toBe("noul");
     expect(q.f3).toBeUndefined();
+  });
+  it("does not ask about tel and email inputs, and restricts url inputs to link keys", () => {
+    const q = questionsFor([field({ id: "t", kind: "tel", label: "Phone Number" }), field({ id: "e", kind: "email", label: "Email" }), field({ id: "u", kind: "url", label: "LinkedIn" })]);
+    expect(q.t).toBeUndefined();
+    expect(q.e).toBeUndefined();
+    expect(Object.keys((q.u as { criteria: Record<string, string> }).criteria)).toEqual(["linkedin_url", "github_url", "website_url", "leave_blank"]);
+  });
+  it("fills tel and email inputs from the input type alone", () => {
+    const j = job(["Toronto, ON"]);
+    expect(planField(field({ kind: "tel", label: "Phone Number" }), undefined, profile, j)).toMatchObject({ action: "fill", value: "5555550123" });
+    expect(planField(field({ kind: "tel", label: "Phone", placeholder: "+1 555 555 5555" }), undefined, profile, j)).toMatchObject({ action: "fill", value: "+15555550123" });
+    expect(planField(field({ kind: "email", label: "Personal Email" }), undefined, profile, j)).toMatchObject({ action: "fill", value: "ada@example.com" });
+  });
+  it("puts the section into the question", () => {
+    const q = questionsFor([field({ id: "s", kind: "text", label: "Start Date", section: "Education" })]);
+    expect((q.s as { instructions: string }).instructions).toContain('in the "Education" section');
   });
 });
 
@@ -96,6 +112,26 @@ describe("captured form dumps", () => {
     expect(dump.fields.every((f) => f.id && f.selector && f.label !== undefined)).toBe(true);
     const labels = dump.fields.filter((f) => f.kind !== "file" && f.kind !== "checkbox").map((f) => f.label);
     expect(new Set(labels).size).toBe(labels.length);
-    expect(Object.keys(questionsFor(dump.fields)).length).toBe(dump.fields.filter((f) => f.kind !== "file").length);
+    expect(Object.keys(questionsFor(dump.fields)).length).toBe(dump.fields.filter((f) => !["file", "email", "tel"].includes(f.kind)).length);
+  });
+});
+
+describe("educationDatePlan", () => {
+  const months = Array.from({ length: 12 }, (_, i) => ({ value: String(i + 1), label: String(i + 1) }));
+  const years = Array.from({ length: 10 }, (_, i) => ({ value: String(2030 - i), label: String(2030 - i) }));
+  const school = field({ id: "s", label: "School" });
+  const degree = field({ id: "d", kind: "select", label: "Degree", options: [{ value: "b", label: "Bachelor's" }] });
+  it("resolves degree start and end selects from the profile", () => {
+    expect(educationDatePlan(field({ id: "m", kind: "select", label: "Start Date", options: months }), [school, degree], profile)).toMatchObject({ action: "fill", value: "9", key: "education_start_date" });
+    expect(educationDatePlan(field({ id: "y", kind: "select", label: "Start Date", options: years }), [school, degree], profile)).toMatchObject({ action: "fill", value: "2024" });
+    expect(educationDatePlan(field({ id: "e", kind: "select", label: "End Date", options: [{ value: "x", label: "April" }, { value: "y", label: "May" }] }), [degree], profile)).toMatchObject({ action: "fill", value: "x", optionLabel: "April" });
+    expect(educationDatePlan(field({ id: "ey", kind: "select", label: "End Date", options: years }), [degree], profile)).toMatchObject({ action: "fill", value: "2027" });
+  });
+  it("leaves job start dates and unrelated selects to JEV", () => {
+    expect(educationDatePlan(field({ id: "j", kind: "select", label: "Start Date", options: months }), [field({ label: "Phone" })], profile)).toBeNull();
+    expect(educationDatePlan(field({ id: "k", kind: "select", label: "Country", options: years }), [degree], profile)).toBeNull();
+  });
+  it("asks for review when no option matches", () => {
+    expect(educationDatePlan(field({ id: "r", kind: "select", label: "Start Date", options: [{ value: "a", label: "2010" }, { value: "b", label: "2011" }] }), [degree], profile)?.action).toBe("review");
   });
 });

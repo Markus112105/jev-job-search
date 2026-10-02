@@ -64,6 +64,22 @@
     if (c) c.querySelectorAll("p, small, [class*=help i], [class*=hint i], [class*=description i]").forEach((n) => { const t = text(n); if (t && t.length < 400) bits.push(t); });
     return [...new Set(bits)].join(" ").slice(0, 400);
   };
+  // The nearest heading or legend above the control, for context like "Education" or "Voluntary self-identification".
+  const sectionFor = (el) => {
+    const root = el.closest("form, [role=tabpanel], main") || document.body;
+    let cur = el;
+    while (cur && cur !== root && cur !== document.body) {
+      let sib = cur.previousElementSibling;
+      while (sib) {
+        if (/^H[1-6]$|^LEGEND$/.test(sib.tagName)) return text(sib).slice(0, 80);
+        const h = sib.querySelector && sib.querySelector("h1, h2, h3, h4, legend");
+        if (h && sib.querySelectorAll("input, select, textarea").length === 0) return text(h).slice(0, 80);
+        sib = sib.previousElementSibling;
+      }
+      cur = cur.parentElement;
+    }
+    return "";
+  };
   const isRequired = (el, label) => el.required || el.getAttribute("aria-required") === "true" || /[*✱]\s*$|\(required\)/i.test(label) || /required/i.test(el.closest("[class*=required i]")?.className || "");
 
   const controls = document.querySelectorAll("input, select, textarea, [role=combobox], [role=listbox]");
@@ -109,6 +125,7 @@
       accept: el.getAttribute("accept") || "",
       maxLength: el.maxLength > 0 ? el.maxLength : null,
       autocomplete: el.getAttribute("autocomplete") || "",
+      section: sectionFor(el),
     };
     f.required = isRequired(el, f.label);
 
@@ -171,6 +188,7 @@
       accept: "",
       maxLength: null,
       autocomplete: "",
+      section: sectionFor(c),
       buttonGroup: true,
     });
   });

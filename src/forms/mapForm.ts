@@ -13,7 +13,7 @@ import type { JevClient } from "../jev/client.js";
 import { choice, noul } from "../jev/questions.js";
 import type { Answer, ChoiceAnswer, NoulAnswer, Questions } from "../jev/types.js";
 import { ALL_KEYS, isProfileKey, isSpecialKey, profileFacts, valueFor, type FieldKey } from "../profile/fieldKeys.js";
-import type { Profile } from "../profile/schema.js";
+import { monthName, type Profile } from "../profile/schema.js";
 import { BANK_INTENTS } from "../answers/bank.js";
 import { locationTier } from "../jobs/hardFilters.js";
 import type { Job } from "../jobs/normalize.js";
@@ -36,7 +36,11 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
         statement: profile.workAuthorization.statement,
         for_this_job: authForCountry(profile, country),
       },
-      education: profile.education[0],
+      education: {
+        ...profile.education[0],
+        degree_start: `${monthName(profile.education[0]?.startMonth ?? 1)} ${profile.education[0]?.startYear} (month ${profile.education[0]?.startMonth})`,
+        degree_end_or_graduation: `${monthName(profile.education[0]?.gradMonth ?? 1)} ${profile.education[0]?.gradYear} (month ${profile.education[0]?.gradMonth})`,
+      },
       demographics: profile.demographics,
       preferences: profile.preferences,
       gpa_policy: "Only give a GPA if the field is required. The cumulative GPA is " + (profile.education[0]?.gpa?.cumulative ?? "not provided") + " on a 4.0 scale.",
@@ -45,11 +49,15 @@ export function buildFormState(profile: Profile, job: Job, dump: FieldsDump, fie
         "Never write a cover letter.",
         "Salary expectation is left blank or set to negotiable.",
         "Marketing opt-ins are optional and left unchecked. Consent and acknowledgement boxes required to apply are checked.",
+        "A Start Date or End Date that follows School, Degree or Field of Study fields is the degree's start or end, never the job start. The job start is only asked by fields that say available, start work, or join.",
       ],
     },
-    fields: fields.map((f) => ({
+    fields: fields.map((f, i) => ({
       id: f.id,
       kind: f.kind,
+      section: f.section,
+      /** Labels of the two fields just above this one: "Start Date" after "School" and "Degree" is an education date. */
+      preceded_by: fields.slice(Math.max(0, i - 2), i).map((p) => p.label).filter(Boolean),
       label: f.label,
       hint: f.hint,
       placeholder: f.placeholder,
@@ -68,13 +76,26 @@ export function authForCountry(profile: Profile, country: string): { authorized:
 
 const TEXT_KINDS = new Set(["text", "email", "tel", "url", "number", "date", "textarea"]);
 
+/** Input types whose value is fixed by the type itself; JEV only picks among the matching keys. */
+const KEYS_BY_KIND: Partial<Record<string, string[]>> = {
+  url: ["linkedin_url", "github_url", "website_url", "leave_blank"],
+};
+
 export function questionsFor(fields: DumpedField[]): Questions {
   const q: Questions = {};
   const keyCriteria: Record<string, string> = { ...ALL_KEYS };
   for (const [intent, desc] of Object.entries(BANK_INTENTS)) keyCriteria[`bank:${intent}`] = desc;
   for (const f of fields) {
-    const title = `Field "${f.label || f.placeholder || f.name}"${f.hint ? ` (${f.hint.slice(0, 120)})` : ""}${f.required ? ", required" : ", optional"}`;
-    if (TEXT_KINDS.has(f.kind)) {
+    const section = f.section ? ` in the "${f.section}" section` : "";
+    const i = fields.indexOf(f);
+    const before = fields.slice(Math.max(0, i - 2), i).map((p) => p.label).filter(Boolean);
+    const context = before.length ? ` (directly after the fields ${before.map((b) => `"${b.slice(0, 40)}"`).join(" and ")})` : "";
+    const title = `Field "${f.label || f.placeholder || f.name}"${section}${context}${f.hint ? ` (${f.hint.slice(0, 120)})` : ""}${f.required ? ", required" : ", optional"}`;
+    if (f.kind === "email" || f.kind === "tel") continue; // fixed by the input type; see planField
+    const restricted = KEYS_BY_KIND[f.kind];
+    if (restricted) {
+      q[f.id] = choice(`${title}, an input of type ${f.kind}: which value should fill it?`, Object.fromEntries(restricted.map((k) => [k, keyCriteria[k] as string])));
+    } else if (TEXT_KINDS.has(f.kind)) {
       q[f.id] = choice(`${title}: which value should fill it?`, keyCriteria);
     } else if (f.kind === "select" || f.kind === "radio" || f.kind === "combobox") {
       const opts = f.options.slice(0, FORM.maxOptionsForJev);
@@ -96,10 +117,49 @@ export function questionsFor(fields: DumpedField[]): Questions {
   return q;
 }
 
+const EDUCATION_NEIGHBOUR = /school|university|college|degree|field of study|major|education|graduat|start date|end date/i;
+const DATE_LABEL = /^(start|end)\s*(date|month|year)?$/i;
+
+/**
+ * A Start Date or End Date select that sits right after education fields is
+ * the degree's dates. That is a fact from the profile, so it is resolved in
+ * code: month selects get the month (by name or number), year selects the year.
+ * Returns null when the field is not one of these.
+ */
+export function educationDatePlan(f: DumpedField, previous: DumpedField[], profile: Profile): PlannedField | null {
+  if (!DATE_LABEL.test(f.label.trim()) || (f.kind !== "select" && f.kind !== "combobox") || f.options.length === 0) return null;
+  if (!previous.some((p) => EDUCATION_NEIGHBOUR.test(p.label))) return null;
+  const edu = profile.education[0];
+  if (!edu) return null;
+  const isStart = /^start/i.test(f.label.trim());
+  const month = isStart ? edu.startMonth : edu.gradMonth;
+  const year = isStart ? edu.startYear : edu.gradYear;
+  const labels = f.options.map((o) => o.label.trim());
+  const looksLikeYears = labels.filter((l) => /^(19|20)\d\d$/.test(l)).length >= Math.max(2, labels.length / 2);
+  const looksLikeMonths = labels.some((l) => /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/i.test(l)) || labels.filter((l) => /^(0?[1-9]|1[0-2])$/.test(l)).length >= 12;
+  let opt: { value: string; label: string } | undefined;
+  if (looksLikeYears) opt = f.options.find((o) => o.label.trim() === String(year) || o.value === String(year));
+  else if (looksLikeMonths) {
+    const name = monthName(month).toLowerCase();
+    opt = f.options.find((o) => o.label.trim().toLowerCase().startsWith(name.slice(0, 3)) || o.label.trim() === String(month) || o.label.trim() === String(month).padStart(2, "0") || o.value === String(month));
+  }
+  const base = { id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required };
+  if (!opt) return { ...base, action: "review", key: isStart ? "education_start_date" : "graduation_date", value: null, optionLabel: null, confidence: 0.4, note: `education ${isStart ? "start" : "end"} date, no matching option for ${monthName(month)} ${year}` };
+  return { ...base, action: "fill", key: isStart ? "education_start_date" : "graduation_date", value: f.kind === "select" ? opt.value : opt.label, optionLabel: opt.label, confidence: 1, note: "degree date from the profile" };
+}
+
 export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: FieldsDump): Promise<FillPlan> {
   const planned: PlannedField[] = [];
   const startCost = jev.usage.costUsd;
-  const askable = dump.fields.filter((f) => f.kind !== "file");
+  const resolvedInCode = new Set<string>();
+  dump.fields.forEach((f, i) => {
+    const p = educationDatePlan(f, dump.fields.slice(Math.max(0, i - 4), i), profile);
+    if (p) {
+      planned.push(p);
+      resolvedInCode.add(f.id);
+    }
+  });
+  const askable = dump.fields.filter((f) => f.kind !== "file" && !resolvedInCode.has(f.id));
   for (let i = 0; i < askable.length; i += FORM.fieldsPerCall) {
     const chunk = askable.slice(i, i + FORM.fieldsPerCall);
     const questions = questionsFor(chunk);
@@ -139,6 +199,12 @@ export async function mapForm(jev: JevClient, profile: Profile, job: Job, dump: 
 
 export function planField(f: DumpedField, answer: Answer | undefined, profile: Profile, job: Job): PlannedField {
   const base = { id: f.id, selector: f.selector, kind: f.kind, label: f.label, required: f.required, optionLabel: null as string | null };
+  if (f.kind === "email") return { ...base, action: "fill", key: "email", value: profile.email, confidence: 1, note: null };
+  if (f.kind === "tel") {
+    // National digits unless the placeholder or hint shows an international format.
+    const intl = /\+\d|country code|international/i.test(`${f.placeholder} ${f.hint}`);
+    return { ...base, action: "fill", key: intl ? "phone_with_country_code" : "phone", value: intl ? `${profile.phone.countryCode}${profile.phone.national}` : profile.phone.national, confidence: 1, note: null };
+  }
   if (!answer) return { ...base, action: "review", key: "unknown", value: null, confidence: 0, note: "no answer" };
 
   if (f.kind === "checkbox") {

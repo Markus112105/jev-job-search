@@ -27,6 +27,8 @@ export const DumpedField = z.object({
   accept: z.string().default(""),
   maxLength: z.number().nullable().default(null),
   autocomplete: z.string().default(""),
+  /** Nearest heading above the control: "Education", "Work authorization", "Voluntary self-identification". */
+  section: z.string().default(""),
   /** True when the "radio" is a group of plain buttons rather than input elements. */
   buttonGroup: z.boolean().default(false),
 });

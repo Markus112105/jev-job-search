@@ -36,8 +36,10 @@ export const PROFILE_KEYS = {
   degree: "Degree type or level, such as Bachelor's",
   major: "Field of study or major",
   minor: "Minor",
-  education_start_date: "Education start month and year",
-  graduation_date: "Expected graduation date, month and year",
+  education_start_date: "Start date or start month and year of the degree, under an Education or School section",
+  education_start_month: "Start month only of the degree, under an Education section",
+  education_start_year: "Start year only of the degree, under an Education section",
+  graduation_date: "Expected graduation date, end date of the degree, month and year",
   graduation_month: "Graduation month only",
   graduation_year: "Graduation or class year only",
   gpa: "GPA or grade point average",
@@ -62,7 +64,7 @@ export const PROFILE_KEYS = {
   years_of_experience: "Total years of professional experience",
   skills: "Technical skills or technologies, comma separated",
   spoken_languages: "Languages spoken",
-  earliest_start_date: "Earliest or preferred start date",
+  earliest_start_date: "Earliest or preferred date the candidate can start the job (not an education date)",
   availability: "Availability, work term length or duration",
   salary_expectation: "Expected salary or compensation",
   willing_to_relocate: "Willing to relocate yes or no",
@@ -123,6 +125,8 @@ export function valueFor(profile: Profile, key: ProfileKey): string | null {
     case "major": return edu.field;
     case "minor": return edu.minor ?? null;
     case "education_start_date": return `${monthName(edu.startMonth)} ${edu.startYear}`;
+    case "education_start_month": return monthName(edu.startMonth);
+    case "education_start_year": return String(edu.startYear);
     case "graduation_date": return `${monthName(edu.gradMonth)} ${edu.gradYear}`;
     case "graduation_month": return monthName(edu.gradMonth);
     case "graduation_year": return String(edu.gradYear);
