@@ -1,0 +1,156 @@
+/**
+ * One Job shape for every source. Everything downstream (filters, rating,
+ * the queue, the CSV) reads this and nothing else.
+ */
+import { createHash } from "node:crypto";
+
+export type Ats =
+  | "greenhouse" | "lever" | "ashby" | "workday" | "icims" | "smartrecruiters" | "jobvite"
+  | "rippling" | "bamboohr" | "taleo" | "oracle" | "successfactors" | "linkedin" | "amazon" | "other";
+
+export type Sponsorship = "offers" | "none" | "citizenship" | "unknown";
+
+export type Job = {
+  id: string;
+  source: string;
+  company: string;
+  title: string;
+  url: string;
+  ats: Ats;
+  locations: string[];
+  /** ISO date (YYYY-MM-DD) or null when the source does not say. */
+  postedAt: string | null;
+  terms: string[];
+  sponsorship: Sponsorship;
+  degrees: string[];
+  category: string | null;
+  description?: string;
+  descriptionSource?: "api" | "html" | "none";
+};
+
+export function jobId(url: string): string {
+  return createHash("sha1").update(canonicalUrl(url)).digest("hex").slice(0, 16);
+}
+
+/** Drops tracking params and fragments so the same posting from two lists dedupes. */
+export function canonicalUrl(raw: string): string {
+  try {
+    const u = new URL(raw.trim());
+    u.hash = "";
+    const drop = [...u.searchParams.keys()].filter((k) => /^(utm_|ref$|source$|src$|gh_src$|lever-source|mobile$|needsRedirect$)/i.test(k));
+    for (const k of drop) u.searchParams.delete(k);
+    u.hostname = u.hostname.toLowerCase();
+    let s = u.toString();
+    if (s.endsWith("/")) s = s.slice(0, -1);
+    return s;
+  } catch {
+    return raw.trim();
+  }
+}
+
+export function atsFromUrl(url: string): Ats {
+  const h = (() => {
+    try {
+      return new URL(url).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  const u = url.toLowerCase();
+  if (h.includes("greenhouse.io") || /[?&]gh_jid=/.test(u)) return "greenhouse";
+  if (h.includes("lever.co")) return "lever";
+  if (h.includes("ashbyhq.com")) return "ashby";
+  if (h.includes("myworkdayjobs.com") || h.includes("workday.com") || h.includes("wd1.") || h.includes("wd3.") || h.includes("wd5.")) return "workday";
+  if (h.includes("icims.com")) return "icims";
+  if (h.includes("smartrecruiters.com")) return "smartrecruiters";
+  if (h.includes("jobvite.com")) return "jobvite";
+  if (h.includes("rippling.com")) return "rippling";
+  if (h.includes("bamboohr.com")) return "bamboohr";
+  if (h.includes("taleo.net")) return "taleo";
+  if (h.includes("oraclecloud.com")) return "oracle";
+  if (h.includes("successfactors.com") || h.includes("jobs.sap.com")) return "successfactors";
+  if (h.includes("linkedin.com")) return "linkedin";
+  if (h.includes("amazon.jobs")) return "amazon";
+  return "other";
+}
+
+export function ageDays(job: Pick<Job, "postedAt">, now = new Date()): number | null {
+  if (!job.postedAt) return null;
+  const t = new Date(job.postedAt + "T00:00:00Z").getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((now.getTime() - t) / 86_400_000));
+}
+
+export function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+const MONTHS: Record<string, number> = {
+  jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, sept: 8, oct: 9, nov: 10, dec: 11,
+};
+
+/** Parses "Sep 29, 2026", "Sep 29", "2026-09-29", "Sept 5" into an ISO date. Year-less dates assume the most recent past occurrence. */
+export function parseLooseDate(s: string, now = new Date()): string | null {
+  const t = s.trim();
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const m = /^([A-Za-z]{3,5})\.?\s+(\d{1,2})(?:,?\s*(\d{4}))?$/.exec(t);
+  if (!m) return null;
+  const month = MONTHS[(m[1] as string).toLowerCase()];
+  if (month === undefined) return null;
+  const day = parseInt(m[2] as string, 10);
+  let year = m[3] ? parseInt(m[3], 10) : now.getUTCFullYear();
+  let d = new Date(Date.UTC(year, month, day));
+  if (!m[3] && d.getTime() > now.getTime() + 86_400_000) {
+    year -= 1;
+    d = new Date(Date.UTC(year, month, day));
+  }
+  return toIsoDate(d);
+}
+
+export function dedupe(jobs: Job[]): Job[] {
+  const seen = new Map<string, Job>();
+  for (const j of jobs) {
+    const existing = seen.get(j.id);
+    if (!existing) {
+      seen.set(j.id, j);
+      continue;
+    }
+    // Keep the richer record: more locations, a posted date, a description.
+    const merged: Job = {
+      ...existing,
+      locations: existing.locations.length >= j.locations.length ? existing.locations : j.locations,
+      postedAt: existing.postedAt ?? j.postedAt,
+      terms: existing.terms.length ? existing.terms : j.terms,
+      sponsorship: existing.sponsorship !== "unknown" ? existing.sponsorship : j.sponsorship,
+      degrees: existing.degrees.length ? existing.degrees : j.degrees,
+      category: existing.category ?? j.category,
+      source: existing.source.includes(j.source) ? existing.source : `${existing.source}+${j.source}`,
+    };
+    seen.set(j.id, merged);
+  }
+  return [...seen.values()];
+}
+
+/**
+ * The URL that opens the application form directly, when the ATS has a
+ * predictable one. Greenhouse's embed page is server-rendered and skips the
+ * company's custom careers site; Lever and Ashby have fixed apply paths.
+ */
+export function applyUrlFor(job: Pick<Job, "url" | "ats">): string {
+  if (job.ats === "greenhouse") {
+    const slug = /greenhouse\.io\/(?:embed\/job_app\?for=)?([a-z0-9_-]+)/i.exec(job.url)?.[1] ?? /[?&]for=([a-z0-9_-]+)/i.exec(job.url)?.[1];
+    const id = /\/jobs\/(\d+)/.exec(job.url)?.[1] ?? /[?&](?:gh_jid|token)=(\d+)/.exec(job.url)?.[1];
+    if (slug && id && slug !== "embed") return `https://boards.greenhouse.io/embed/job_app?for=${slug}&token=${id}`;
+    return job.url;
+  }
+  if (job.ats === "lever") {
+    const m = /^(https:\/\/jobs\.lever\.co\/[^/]+\/[0-9a-f-]{36})/i.exec(job.url);
+    return m ? `${m[1]}/apply` : job.url;
+  }
+  if (job.ats === "ashby") {
+    const m = /^(https:\/\/jobs\.ashbyhq\.com\/[^/]+\/[0-9a-f-]{36})/i.exec(job.url);
+    return m ? `${m[1]}/application` : job.url;
+  }
+  return job.url;
+}
