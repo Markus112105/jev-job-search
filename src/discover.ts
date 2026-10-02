@@ -1,0 +1,167 @@
+/**
+ * The discover pipeline: sources → dedupe → pre-filter → describe → rate → queue.
+ * No browser involved. Safe to run as often as you like; everything is cached
+ * and previously applied jobs keep their status.
+ */
+import { existsSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { DISCOVER, PATHS } from "./config.js";
+import { JevClient } from "./jev/client.js";
+import { describe } from "./jobs/describe.js";
+import { preFilter } from "./jobs/hardFilters.js";
+import { dedupe, type Job } from "./jobs/normalize.js";
+import { entryFor, loadQueue, saveQueue, sortEntries, type QueueEntry, type QueueFile } from "./jobs/queue.js";
+import { rateJob, type FitResult } from "./jobs/rate.js";
+import { loadRows, saveRows, upsertEntry } from "./log/csv.js";
+import type { Profile } from "./profile/schema.js";
+import { fetchAshbyBoard } from "./sources/ats/ashby.js";
+import { fetchGreenhouseBoard } from "./sources/ats/greenhouse.js";
+import { fetchLeverBoard } from "./sources/ats/lever.js";
+import { boardsFromJobs, type Board } from "./sources/companies.js";
+import { fetchReadmeSources } from "./sources/githubReadme.js";
+import { fetchSimplify } from "./sources/simplify.js";
+import { importSheet } from "./sources/sheetImport.js";
+import { mapLimit } from "./util/http.js";
+
+export const EARLY_CAREER_TITLE = /\b(intern|internship|co-?op|new grad|new graduate|early career|early-career|entry[- ]level|junior|graduate|university|student|campus|associate software|software engineer i\b|engineer i\b|swe i\b|2027)\b/i;
+
+export type DiscoverOptions = {
+  boards?: boolean;
+  limit?: number;
+  log?: (line: string) => void;
+  now?: Date;
+};
+
+export type DiscoverSummary = {
+  collected: number;
+  unique: number;
+  preFiltered: number;
+  rated: number;
+  queued: number;
+  belowThreshold: number;
+  skippedByJev: number;
+  jevCostUsd: number;
+  jevCalls: number;
+};
+
+export async function collectJobs(opts: DiscoverOptions = {}): Promise<Job[]> {
+  const log = opts.log ?? (() => {});
+  const jobs: Job[] = [];
+
+  const [simplify, readmes] = await Promise.all([
+    fetchSimplify().catch((e) => {
+      log(`[sources] simplify failed: ${String(e)}`);
+      return [] as Job[];
+    }),
+    fetchReadmeSources(),
+  ]);
+  log(`[sources] simplify ${simplify.length}, github lists ${readmes.length}`);
+  jobs.push(...simplify, ...readmes);
+
+  if (existsSync(PATHS.imports)) {
+    for (const f of readdirSync(PATHS.imports).filter((f) => f.endsWith(".csv"))) {
+      try {
+        const imported = importSheet(path.join(PATHS.imports, f));
+        log(`[sources] ${f}: ${imported.length} rows`);
+        jobs.push(...imported);
+      } catch (e) {
+        log(`[sources] ${f} failed: ${String(e)}`);
+      }
+    }
+  }
+
+  if (opts.boards !== false) {
+    const boards = boardsFromJobs(jobs);
+    log(`[sources] polling ${boards.length} company boards`);
+    const results = await mapLimit(boards, DISCOVER.fetchConcurrency, (b: Board) =>
+      b.ats === "greenhouse" ? fetchGreenhouseBoard(b.slug, b.company)
+      : b.ats === "lever" ? fetchLeverBoard(b.slug, b.company)
+      : fetchAshbyBoard(b.slug, b.company),
+    );
+    let fromBoards = 0;
+    results.forEach((r) => {
+      if (!r.ok) return;
+      const early = r.value.filter((j) => EARLY_CAREER_TITLE.test(j.title));
+      fromBoards += early.length;
+      jobs.push(...early);
+    });
+    log(`[sources] boards contributed ${fromBoards} early-career postings`);
+  }
+  return dedupe(jobs);
+}
+
+export async function discover(profile: Profile, jev: JevClient, opts: DiscoverOptions = {}): Promise<{ queue: QueueFile; summary: DiscoverSummary }> {
+  const log = opts.log ?? (() => {});
+  const now = opts.now ?? new Date();
+  const previous = loadQueue();
+  const prevById = new Map(previous.entries.map((e) => [e.job.id, e]));
+
+  const all = await collectJobs(opts);
+  const collected = all.length;
+  log(`[discover] ${collected} unique postings`);
+
+  const kept: Job[] = [];
+  const entries: QueueEntry[] = [];
+  for (const job of all) {
+    const reason = preFilter(job, now);
+    if (reason) entries.push(entryFor(job, null, reason, prevById.get(job.id)));
+    else kept.push(job);
+  }
+  log(`[discover] ${kept.length} pass the code filters, ${entries.length} do not`);
+
+  // Jobs with a terminal status from an earlier run are not re-rated.
+  const toRate = kept.filter((j) => {
+    const prev = prevById.get(j.id);
+    if (prev && ["applied", "skipped", "failed", "blocked"].includes(prev.status) && prev.fit) {
+      entries.push(entryFor(j, prev.fit as FitResult, null, prev));
+      return false;
+    }
+    return true;
+  });
+  const limited = typeof opts.limit === "number" ? toRate.slice(0, opts.limit) : toRate;
+  log(`[discover] fetching ${limited.length} descriptions`);
+  const described = await mapLimit(limited, DISCOVER.fetchConcurrency, (j) => describe(j));
+  const ready = described.map((r, i) => (r.ok ? r.value : (limited[i] as Job)));
+
+  log(`[discover] rating ${ready.length} with JEV`);
+  let done = 0;
+  const rated = await mapLimit(ready, DISCOVER.rateConcurrency, async (j) => {
+    const fit = await rateJob(jev, j, profile, now);
+    done++;
+    if (done % 25 === 0) log(`[discover] rated ${done}/${ready.length} (spend $${jev.usage.costUsd.toFixed(4)})`);
+    return fit;
+  });
+  let ratedCount = 0;
+  rated.forEach((r, i) => {
+    const job = ready[i] as Job;
+    if (r.ok) {
+      ratedCount++;
+      entries.push(entryFor(job, r.value, null, prevById.get(job.id)));
+    } else {
+      const e = entryFor(job, null, null, prevById.get(job.id));
+      e.status = "failed";
+      e.statusReason = `rating failed: ${String(r.error).slice(0, 120)}`;
+      entries.push(e);
+    }
+  });
+
+  const queue: QueueFile = { version: 1, generatedAt: now.toISOString(), entries: sortEntries(entries) };
+  saveQueue(queue);
+
+  let rows = loadRows();
+  for (const e of queue.entries) rows = upsertEntry(rows, e);
+  saveRows(rows);
+
+  const summary: DiscoverSummary = {
+    collected,
+    unique: all.length,
+    preFiltered: all.length - kept.length,
+    rated: ratedCount,
+    queued: queue.entries.filter((e) => e.status === "queued").length,
+    belowThreshold: queue.entries.filter((e) => e.fit?.decision === "below_threshold").length,
+    skippedByJev: queue.entries.filter((e) => e.fit?.decision === "skip").length,
+    jevCostUsd: jev.usage.costUsd,
+    jevCalls: jev.usage.calls,
+  };
+  return { queue, summary };
+}
