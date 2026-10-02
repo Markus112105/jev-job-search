@@ -1,0 +1,27 @@
+# secrets
+.env
+.env.*
+!.env.example
+
+# personal data: never committed
+data/profile.json
+data/applications.csv
+data/queue.json
+data/cache/
+data/runs/
+data/resume/*
+!data/resume/README.md
+data/imports/
+
+# node
+node_modules/
+npm-debug.log*
+.npm/
+
+# editors and OS
+.DS_Store
+.vscode/
+.idea/
+
+# test output
+coverage/
