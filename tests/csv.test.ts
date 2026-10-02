@@ -1,0 +1,35 @@
+import { describe, expect, it } from "vitest";
+import { COLUMNS, SHEET_COLUMNS, emptyRow, parseCsv, toCsv, upsertEntry } from "../src/log/csv.js";
+import type { QueueEntry } from "../src/jobs/queue.js";
+
+const entry = (over: Partial<QueueEntry> = {}): QueueEntry => ({
+  job: { id: "abc", source: "simplify-internships", company: "Acme", title: "SWE Intern", url: "https://x/1", ats: "greenhouse", locations: ["Toronto, ON"], postedAt: "2026-10-01", terms: ["Summer 2027"], sponsorship: "unknown", degrees: [], category: null },
+  fit: { score: 0.61, decision: "apply", skipReason: null, reasons: ["stack strong"], components: {}, locationTier: "canada", answers: { work_auth: { type: "choice", choice: "canada_ok", probabilities: {}, confidence: 0.9 }, term: { type: "choice", choice: "summer_2027", probabilities: {}, confidence: 1 }, level: { type: "choice", choice: "internship", probabilities: {}, confidence: 1 } } },
+  preFilterReason: null, status: "queued", statusReason: null, attempts: 0, discoveredAt: "2026-10-02T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z", appliedAt: null, notes: null, ...over,
+});
+
+describe("csv", () => {
+  it("round-trips quotes, commas and newlines", () => {
+    const rows = [["a", 'he said "hi"', "x,y", "line1\nline2"]];
+    expect(parseCsv(toCsv(rows))).toEqual(rows);
+  });
+  it("keeps the sheet's fifteen columns first, in order", () => {
+    expect(COLUMNS.slice(0, 15)).toEqual([...SHEET_COLUMNS]);
+    expect(SHEET_COLUMNS[0]).toBe("Company");
+    expect(SHEET_COLUMNS[13]).toBe("App. Status");
+  });
+  it("upserts by job link and preserves hand-filled columns", () => {
+    let rows = upsertEntry([], entry());
+    expect(rows[0]).toMatchObject({ Company: "Acme", "App. Status": "Queued", "Fit Score": "0.610", "Visa / Work Auth": "Canada. No visa needed.", Term: "summer_2027" });
+    rows[0]!["Contact #1 (Name / Role / LinkedIn)"] = "Jane / Recruiter / url";
+    rows = upsertEntry(rows, entry({ status: "applied", appliedAt: "2026-10-02T15:00:00Z" }), { "Why You're a Fit": "fits" });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ "App. Status": "Applied", "Applied On": "2026-10-02", "Contact #1 (Name / Role / LinkedIn)": "Jane / Recruiter / url", "Why You're a Fit": "fits" });
+  });
+  it("writes skip reasons only for non-applied rows", () => {
+    const rows = upsertEntry([], entry({ status: "skipped", statusReason: "workday" }));
+    expect(rows[0]?.["Skip Reason"]).toBe("workday");
+    expect(rows[0]?.["App. Status"]).toBe("Skipped: workday");
+    expect(emptyRow()["Job ID"]).toBe("");
+  });
+});
