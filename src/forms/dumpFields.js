@@ -154,6 +154,24 @@
     }
     return "";
   };
+  // The question above a group of options on a form that writes it as plain text, with no label or legend.
+  // The walk stops at another question's controls, so an option never takes the question of the group before it.
+  const optionQuestionFor = (el) => {
+    const sameGroup = (node) => [...node.querySelectorAll("input, select, textarea")].every((i) => i.type === el.type && !!el.name && i.name === el.name);
+    let cur = el;
+    for (let depth = 0; cur && cur !== document.body && depth < 8; depth++, cur = cur.parentElement) {
+      let sib = cur.previousElementSibling;
+      while (sib) {
+        if (sib.tagName === "H1" || sib.querySelector("h1")) return "";
+        const holds = sib.querySelector("input, select, textarea, [role=combobox]");
+        if (holds && !sameGroup(sib)) return "";
+        const t = text(sib);
+        if (!holds && t && t.length <= LABEL_MAX && !GENERIC.test(t)) return t.replace(/\s*[*✱]\s*$/, "");
+        sib = sib.previousElementSibling;
+      }
+    }
+    return "";
+  };
   const hintFor = (el) => {
     const by = el.getAttribute("aria-describedby");
     const bits = [];
@@ -201,6 +219,7 @@
     if (el.parentElement && el.parentElement.querySelector("datalist")) return "datalist";
     if (el.closest('[data-testid="select-controller"]')) return "testid-select";
     if (drawnByLabel) return "label-drawn";
+    if (el.tagName === "SELECT" && /select2-hidden/.test(el.className)) return "select2";
     return "";
   };
   const controls = document.querySelectorAll("input, select, textarea, [role=combobox], [role=listbox]");
@@ -222,13 +241,15 @@
     }
     if (isControl && type !== "radio") usedContainers.add(containerOf(el));
     // A radio or a checkbox is often drawn by its label, with the real box kept out of sight behind it.
-    const drawnByLabel = (type === "radio" || type === "checkbox") && !visible(el) && [el.closest("label"), el.id && document.querySelector(`label[for="${cssEscape(el.id)}"]`)].some((l) => l && visible(l));
-    if (!visible(el) && type !== "file" && !drawnByLabel) return;
+    const drawnByLabel = (type === "radio" || type === "checkbox") && !visible(el) && [el.closest("label"), el.id && document.querySelector(`label[for="${cssEscape(el.id)}"]`), type === "checkbox" && el.closest("[role=checkbox]")].some((l) => l && visible(l));
+    // A select2 list keeps the real <select> out of sight and draws its own box beside it.
+    const drawnBySelect2 = tag === "select" && /select2-hidden/.test(el.className) && !!el.nextElementSibling && visible(el.nextElementSibling);
+    if (!visible(el) && type !== "file" && !drawnByLabel && !drawnBySelect2) return;
     // A box that cannot be typed into is skipped, unless it is a date box set through a calendar.
     const isCalendar = el.readOnly && isControl && tag === "input" && looksLikeDateBox(el);
     if (el.disabled || (el.readOnly && !isCalendar)) return;
     // A text box hidden from people and from the keyboard is the site's own bookkeeping (the parts of an address it fills in itself).
-    if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type)) return;
+    if (el.getAttribute("aria-hidden") === "true" && el.tabIndex === -1 && !["radio", "checkbox", "file"].includes(type) && !drawnBySelect2) return;
     const role = el.getAttribute("role");
     let kind;
     if (isCalendar) kind = "calendar";
@@ -259,7 +280,7 @@
       section: sectionFor(el),
     };
     // For an option, the question it answers says more than the page section it sits in.
-    if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || f.section;
+    if (kind === "checkbox" || kind === "radio") f.section = groupQuestionFor(el) || optionQuestionFor(el) || f.section;
     f.required = isRequired(el, f.label) || /[*✱]\s*$/.test(questionFor(el));
     if (kind !== "radio" && kind !== "checkbox") f.label = cleanLabel(el, f.label);
     if (kind === "file") {
@@ -283,6 +304,12 @@
         let cur = el.parentElement, depth = 0;
         while (cur && depth < 5) { const l = cur.querySelector("legend, label, [class*=label i], h2, h3, h4"); if (l && text(l) && !f.options.some((o) => o.label === text(l))) { f.label = text(l); break; } cur = cur.parentElement; depth++; }
       }
+      // The mark that a group is required sits on its question, not on its options.
+      const box = el.closest("fieldset, [role=radiogroup], [class*=field-entry i], [class*=fieldEntry]");
+      const head = box && [...box.querySelectorAll("legend, label, [class*=question-title i]")].find((h) => !h.querySelector("input") && !f.options.some((o) => o.label === text(h)));
+      if (head && (/required/i.test(String(head.getAttribute("class") || "")) || /[*✱]\s*$|^\s*[*✱]/.test(text(head)))) f.required = true;
+      if (box && box.getAttribute("aria-required") === "true") f.required = true;
+      f.label = f.label.replace(/\s*[*✱]\s*$/, "");
     } else if (kind === "select") {
       [...el.options].forEach((o) => { if (o.value !== "" || o.text.trim()) f.options.push({ value: o.value, label: o.text.trim() }); });
       f.value = el.value;
@@ -302,6 +329,16 @@
     elementOf.set(f, el);
   });
 
+  // A group that keeps a named input of its own (Ashby's Yes/No rows do) is found by that name, which stays
+  // put when a question appears above it. A path of positions would then point at another row.
+  const groupSelectorFor = (c) => {
+    const tag = c.tagName.toLowerCase();
+    for (const inner of c.querySelectorAll(":scope > input[name]")) {
+      const s = `${tag}:has(> input[name="${attr(inner.name)}"])`;
+      if (unique(s)) return s;
+    }
+    return selectorFor(c);
+  };
   // Button groups: a labelled field whose choices are plain <button>s (Ashby's Yes/No, some custom forms).
   const groupContainers = document.querySelectorAll("[class*=field-entry i], [class*=fieldEntry], [class*=question i], fieldset, [role=radiogroup], [role=group]");
   const seenGroup = new Set();
@@ -311,7 +348,7 @@
     // Skip a container whose control was already read. An input nobody can see (Ashby keeps a hidden checkbox
     // behind its Yes and No buttons) does not count: the buttons are the control.
     if (!drawnRadios && [...c.querySelectorAll("input, select, textarea")].some((x) => x.type !== "hidden" && (dumped.has(x) || visible(x)))) return;
-    const buttons = [...c.querySelectorAll("button, [role=radio], [role=option]")].filter((b) => visible(b) && text(b).length > 0 && text(b).length <= 40 && !/upload|browse|remove|submit|apply|next|continue|back/i.test(text(b)));
+    const buttons = [...c.querySelectorAll("button, [role=radio], [role=option]")].filter((b) => visible(b) && text(b).length > 0 && text(b).length <= 90 && !/upload|browse|remove|submit|apply|next|continue|back/i.test(text(b)));
     if (buttons.length < 2 || buttons.length > 12) return;
     if ([...seenGroup].some((prev) => prev.contains(c) || c.contains(prev))) return;
     seenGroup.add(c);
@@ -321,7 +358,7 @@
     fields.push({
       id: "f" + i++,
       widget: drawnRadios ? "drawn-radio" : "buttons",
-      selector: selectorFor(c),
+      selector: groupSelectorFor(c),
       kind: "radio",
       name: c.getAttribute("data-field-path") || "",
       label: label.replace(/\s*[*✱]\s*$/, "").replace(/^\s*[*✱]\s*/, "").slice(0, LABEL_MAX),
