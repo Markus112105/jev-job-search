@@ -1,5 +1,11 @@
 # applywithjev
 
+[![ci](https://github.com/qbeka/applywithjev/actions/workflows/ci.yml/badge.svg)](https://github.com/qbeka/applywithjev/actions/workflows/ci.yml)
+[![codeql](https://github.com/qbeka/applywithjev/actions/workflows/codeql.yml/badge.svg)](https://github.com/qbeka/applywithjev/actions/workflows/codeql.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](.nvmrc)
+[![model: typesafe/jev-1.13](https://img.shields.io/badge/JEV-typesafe%2Fjev--1.13-8A2BE2.svg)](https://openrouter.ai/typesafe/jev-1.13)
+
 Finds software internships and new-grad roles, rates each one against a
 candidate, fills the application in Chrome, submits it, and keeps a CSV of
 everything. Built for one job seeker; written so anyone can fork it with
@@ -108,6 +114,13 @@ from the profile and are not adjusted to fit a posting. It never creates
 accounts, never solves CAPTCHAs (Claude in Chrome pauses and the user does),
 never writes a cover letter, never volunteers a GPA, and never claims a fact
 that is not in the profile. `docs/SAFETY.md` has the full list.
+
+## Contributing
+
+Issues and pull requests are welcome. Read `CONTRIBUTING.md` first; the
+short version is: tests with every change, no personal data in fixtures,
+tunables in `src/config.ts`. Security reports go through
+`SECURITY.md`, not public issues.
 
 ## License
 
