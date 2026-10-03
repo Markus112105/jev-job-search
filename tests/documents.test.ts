@@ -16,7 +16,7 @@ const draft = (): Tailored =>
     skills: [profile.skills.languages[0], profile.skills.frameworks[0], profile.skills.tools[0]],
     experience: [{ company: first.company, title: first.title, bullets: [first.bullets[0]] }],
     projects: project ? [{ name: project.name, bullets: [project.bullets[0], project.bullets[0]] }] : [],
-    coverLetter: { greeting: "Dear Hiring Team,", paragraphs: ["I am applying for the Software Engineer Intern role at Acme Robotics, which builds warehouse robots.", `${first.bullets[0]} That is the work I want to keep doing.`], closing: "Sincerely," },
+    coverLetter: { greeting: "Dear Hiring Team,", paragraphs: ["Acme Robotics builds warehouse robots, and the Software Engineer Intern role is the one I want.", `${first.bullets[0]} That is the work I want to keep doing.`], closing: "Sincerely," },
   });
 
 describe("the truth gate on a tailored draft", () => {
