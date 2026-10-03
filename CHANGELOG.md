@@ -11,6 +11,10 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.2.1] - 2026-10-02
+
 ### Changed
 - A form that stops at a human check (an emailed code, a robot check) is
   closed and listed in `applications/manual.csv` with the reason, and the
