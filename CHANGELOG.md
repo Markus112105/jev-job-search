@@ -11,6 +11,12 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.0.0] - 2026-10-02
+
+The first tagged release: everything built from 1 to 2 October 2026.
+
 ### Added
 - Fill runner (`src/browser/`): drives its own Chrome window over the
   DevTools protocol with no browser library. A form is dumped, mapped by JEV,
