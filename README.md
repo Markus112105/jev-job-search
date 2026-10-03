@@ -1,6 +1,6 @@
-# applywithjev
+# jev-job-search
 
-[![ci](https://github.com/qbeka/applywithjev/actions/workflows/ci.yml/badge.svg)](https://github.com/qbeka/applywithjev/actions/workflows/ci.yml)
+[![ci](https://github.com/qbeka/jev-job-search/actions/workflows/ci.yml/badge.svg)](https://github.com/qbeka/jev-job-search/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=22](https://img.shields.io/badge/node-%3E%3D22-brightgreen.svg)](.nvmrc)
 
@@ -38,7 +38,7 @@ also run the commands without Claude Code, on a Claude API key. See
 1. Get the code and open Claude Code in it.
 
    ```bash
-   git clone https://github.com/qbeka/applywithjev && cd applywithjev && npm install && claude
+   git clone https://github.com/qbeka/jev-job-search && cd jev-job-search && npm install && claude
    ```
 
 2. Type `/setup`.

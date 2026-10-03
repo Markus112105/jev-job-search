@@ -6,7 +6,7 @@ to help is a focused pull request with a test.
 ## Setup
 
 ```bash
-git clone https://github.com/qbeka/applywithjev && cd applywithjev
+git clone https://github.com/qbeka/jev-job-search && cd jev-job-search
 npm install
 npx vitest run
 ```

@@ -5,7 +5,7 @@
 ## The short way
 
 ```bash
-git clone https://github.com/qbeka/applywithjev && cd applywithjev && npm install && claude
+git clone https://github.com/qbeka/jev-job-search && cd jev-job-search && npm install && claude
 ```
 
 Then type `/setup`. Claude asks for your resume, asks what the resume does
@@ -34,8 +34,8 @@ The rest of this page is the same setup done by hand.
 ## 2. Clone and install
 
 ```bash
-git clone https://github.com/qbeka/applywithjev
-cd applywithjev
+git clone https://github.com/qbeka/jev-job-search
+cd jev-job-search
 npm install
 npx vitest run        # everything should pass offline
 ```
@@ -72,7 +72,7 @@ important choices:
   fit rating, so say what you want, where, and when.
 
 Then put your resume at `data/resume/resume.pdf` and set `resume.path` to
-its absolute path, for example `/Users/you/applywithjev/data/resume/resume.pdf`.
+its absolute path, for example `/Users/you/jev-job-search/data/resume/resume.pdf`.
 
 Check it: `npx tsx src/cli.ts doctor` reads the profile and the resume; a
 schema error names the field to fix.

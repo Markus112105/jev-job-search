@@ -1,4 +1,4 @@
-# applywithjev: rules for Claude Code
+# jev-job-search: rules for Claude Code
 
 Read `README.md` first, then `docs/ARCHITECTURE.md`. The CLI is the product:
 `discover` builds the queue, `apply` fills, resolves, verifies and submits.

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S npx tsx
 /**
- * applywithjev command line. Each command is a thin wrapper: the work is in
+ * jev-job-search command line. Each command is a thin wrapper: the work is in
  * discover.ts, run/pipeline.ts and browser/. Commands that list things take
  * --json so their output can be read by a program.
  */
@@ -33,7 +33,7 @@ process.stdout.on("error", (err: NodeJS.ErrnoException) => {
   if (err.code === "EPIPE") process.exit(0);
 });
 const program = new Command();
-program.name("applywithjev").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude write what needs writing.").version("0.1.0");
+program.name("jev-job-search").description("Find and rate software jobs with JEV, fill and check each application form in Chrome, and let Claude write what needs writing.").version("0.1.0");
 
 const int = (v: string) => parseInt(v, 10);
 const whereTheRecordIs = () => `Applications you sent: ${PATHS.applied}\nJobs left for you to do by hand: ${PATHS.manual}\nTake-home assignments to do: ${PATHS.takehome}\nEvery job considered: ${PATHS.applications}`;

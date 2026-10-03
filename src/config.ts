@@ -224,7 +224,7 @@ export const WRITER = {
    * prompt, and this project's CLAUDE.md is about changing the code, not about writing answers.
    * An empty folder outside the project keeps those 1,300 tokens out of every call.
    */
-  cwd: path.join(os.tmpdir(), "applywithjev-writer"),
+  cwd: path.join(os.tmpdir(), "jev-job-search-writer"),
   /**
    * The candidate's context is cached by the provider. A run reads it again within seconds, so the
    * five-minute cache is enough, and writing to it costs 1.25 times the input price where the

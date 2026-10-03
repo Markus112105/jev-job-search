@@ -3,7 +3,7 @@
 ## Reporting
 
 Use GitHub's private vulnerability reporting:
-https://github.com/qbeka/applywithjev/security/advisories/new.
+https://github.com/qbeka/jev-job-search/security/advisories/new.
 Do not open a public issue for anything that involves personal data, API
 keys, or a way to make the tool submit something a user did not intend.
 Expect a reply within a week.
