@@ -87,7 +87,7 @@ Two services do the thinking.
   job?" You pay for it through your OpenRouter key. **This is the only
   separate bill.**
 - **Claude** writes the answers that need sentences, such as "Why do you
-  want to work here?" It runs on the Sonnet 5.5 model at high effort,
+  want to work here?" It runs on the Sonnet 5.5 model at low effort,
   through Claude Code on your own Claude subscription, so there is no
   separate bill for it. If you would rather use a Claude API key, you can,
   and then those calls are billed to that key. See

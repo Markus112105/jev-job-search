@@ -28,7 +28,7 @@ The rest of this page is the same setup done by hand.
 
 - **Node 22 or newer**: `node --version`. Install from nodejs.org or `brew install node`.
 - **Google Chrome**. The runner starts its own window with its own profile; your everyday Chrome is not touched.
-- **Claude**, one of two ways. Either **Claude Code** installed and signed in with `/login`: the tool runs it headless (`claude -p`) on Sonnet 5.5 at high effort, on your subscription. Or a **Claude API key** in `.env` as `ANTHROPIC_API_KEY`: the tool calls the Claude API directly, billed to the key. The skills need Claude Code; the commands work either way.
+- **Claude**, one of two ways. Either **Claude Code** installed and signed in with `/login`: the tool runs it headless (`claude -p`) on Sonnet 5.5 at low effort, on your subscription. Or a **Claude API key** in `.env` as `ANTHROPIC_API_KEY`: the tool calls the Claude API directly, billed to the key. The skills need Claude Code; the commands work either way.
 - An **OpenRouter** account and key from https://openrouter.ai/keys. Put a few dollars of credit on it; a full run costs cents.
 
 ## 2. Clone and install

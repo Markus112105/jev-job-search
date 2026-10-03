@@ -213,7 +213,7 @@ export const BROWSER = {
 export const WRITER = {
   command: "claude",
   model: "claude-sonnet-5-5",
-  effort: "high",
+  effort: "low",
   timeoutMs: 180_000,
   /** Job description characters handed to the writer. The posting is most of what each call costs. */
   maxDescriptionChars: 4_000,

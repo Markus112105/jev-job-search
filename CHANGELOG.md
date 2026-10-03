@@ -71,6 +71,9 @@ Keep a Changelog and the project uses Conventional Commits.
   day. Its jobs stay in the queue.
 - A cookie banner that lies over Submit is answered with its most private
   choice (necessary cookies only, or reject). The tool never accepts all.
+- The writer runs at low effort instead of high: the same model, fewer
+  thinking tokens per call, so a run draws less on a subscription's
+  allowance.
 - Your records live in one folder, `applications/`: `applied.csv`,
   `manual.csv`, `takehome.csv` and `all.csv` (was `data/applications.csv`).
   The folder has a README and is git-ignored apart from it and the example.
