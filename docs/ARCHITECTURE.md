@@ -294,9 +294,9 @@ prints it for any period. What keeps the writer cheap:
 - The writer returns the two sheet notes with its answers. Jobs it was not
   asked about get their notes in one call for the whole run.
 
-Measured over 118 applications on 1 and 2 October 2026: JEV $1.43 in all,
-about 1.2 cents per application. Claude ran on a subscription through
-Claude Code. The README has the table.
+Measured on three real batches on 2 October 2026: JEV 1 to 1.5 cents per
+10 forms, plus $0.06 to $0.09 per search. Claude ran on a subscription
+through Claude Code. The README has the table.
 
 ## Speed
 

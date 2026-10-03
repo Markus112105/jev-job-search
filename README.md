@@ -25,8 +25,8 @@ never writes anything about you that is not in your own profile.
 
 Claude runs on your own Claude subscription, through Claude Code, or on
 your own Claude API key. The only separate bill is JEV, through OpenRouter:
-118 applications cost $1.43 in our own use, about 1.2 cents each. See
-[What it costs](#what-it-costs).
+about 1 to 1.5 cents for every 10 applications, and 7 to 9 cents for each
+search. See [What it costs](#what-it-costs).
 
 ## Start in three steps
 
@@ -93,31 +93,40 @@ Two services do the thinking.
   and then those calls are billed to that key. See
   [Claude Code or the Claude API](#claude-code-or-the-claude-api).
 
-### What JEV cost us
+### What JEV costs
 
-Measured on our own use from 1 to 2 October 2026: 118 applications sent,
-255 form fills counting rehearsals and retries, and 4 searches that rated
-2,182 postings.
+Measured on three real batches on 2 October 2026, every call recorded:
 
-| Step | Calls | Cost |
-|---|---:|---:|
-| Rating postings in 4 searches | 2,182 | $0.35 |
-| Deciding what goes in each field | 1,197 | $1.06 |
-| Reading the page after Submit, matching remembered answers | 456 | $0.02 |
-| **Total for 118 applications** | | **$1.43** |
+| Batch | Forms filled | Applications sent | JEV cost | Per 10 forms |
+|---|---:|---:|---:|---:|
+| 1 | 15 | 10 | $0.022 | $0.015 |
+| 2 | 27 | 16 | $0.037 | $0.014 |
+| 3 | 36 | 18 | $0.037 | $0.010 |
 
-That is about 1.2 cents per application with the searches included, and
-0.9 cents per application for the filling alone. Five dollars of OpenRouter
-credit pays for about 400 applications.
+So **1 to 1.5 cents for every 10 forms**. Most of that is one call per
+form that decides what goes in each field; reading the page after Submit
+and matching remembered answers add a tenth of a cent.
+
+A search is separate: rating 350 to 460 new postings costs $0.06 to
+$0.09, and a second search on the same day costs close to nothing, because
+a posting that has not changed keeps its rating.
+
+Five dollars of OpenRouter credit pays for about 60 searches and 3,000
+applications.
+
+For the record, everything we spent while building and testing the tool
+from 1 to 2 October came to $1.43: 4 searches ($0.35), 118 applications
+sent, and 67 forms that were rehearsed over and over while fixing bugs
+($0.67 of it). Normal use does not do that.
 
 What changes these numbers:
 
 - **Forms with more fields cost more to map.** A long form is one JEV call
-  of a few thousand tokens; a short one is a fraction of a cent.
+  of a few thousand tokens; a short one is a fraction of a cent. A form
+  with several pages is one call per page.
 - **A rehearsal costs the same as a real fill**, except the "read the page
-  after Submit" step, which only a real application reaches.
-- **A second search on the same day costs close to nothing**, because a
-  posting that has not changed keeps its rating.
+  after Submit" step, which only a real application reaches. Sending a
+  form you rehearsed does not map it again.
 - **Claude calls count toward your subscription's usage allowance.** On
   an API key, `cost` shows what they cost instead.
 
