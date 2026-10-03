@@ -11,6 +11,10 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.3.0] - 2026-10-03
+
 ### Added
 - `resume`: a form that stops at a human check (an emailed code, a robot
   check) stays open and filled. The person gets a notification, their own
