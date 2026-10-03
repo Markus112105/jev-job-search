@@ -11,6 +11,10 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.1.0] - 2026-10-02
+
 ### Added
 - `npx jev <command>`: a `jev` command in place of `npx tsx src/cli.ts`.
 - `apply <link>`: a Greenhouse, Lever or Ashby posting link in place of a
