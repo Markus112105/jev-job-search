@@ -273,7 +273,7 @@ export const DOCUMENTS = {
    * be rewritten in the person's own register, and refused if it still does. Matched without case.
    */
   machinePhrases: [
-    "i am writing to", "i am excited", "i'm excited", "i am thrilled", "i'm thrilled", "i am passionate", "passionate about", "i believe i would", "i am confident that", "great fit", "perfect fit", "strong fit",
+    "i am writing to", "i am applying for", "i am applying to", "i would like to apply", "i am excited", "i'm excited", "i am thrilled", "i'm thrilled", "i am passionate", "passionate about", "i believe i would", "i am confident that", "great fit", "perfect fit", "strong fit",
     "aligns with", "aligned with", "resonates", "resonate with", "leverage", "utilize", "furthermore", "moreover", "additionally", "in conclusion", "in today's", "fast-paced", "cutting-edge", "innovative", "dynamic", "impactful",
     "world-class", "best-in-class", "delve", "tapestry", "journey", "seamless", "robust", "spearheaded", "synergy", "eager to contribute", "contribute to your team", "hone my skills", "hit the ground running", "thrive",
     "unique opportunity", "i look forward to hearing", "thank you for considering", "not only", "testament to", "deeply", "truly", "it is worth noting", "skill set", "wealth of experience",
