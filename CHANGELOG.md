@@ -11,6 +11,10 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [1.2.0] - 2026-10-02
+
 ### Added
 - `/report` and `npx jev report`: a dashboard on your own machine from
   the records, with totals, applications per day and per board, every job
