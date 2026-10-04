@@ -42,6 +42,24 @@ export const PATHS = {
   /** Applications sent to a company that also wants a take-home assignment: the link and the instructions, for the person to do. */
   takehome: path.join(ROOT, "applications", "takehome.csv"),
   runs: path.join(ROOT, "data", "runs"),
+  /** The person's standing instructions for the daily run. Without this file `daily` does nothing. */
+  policy: path.join(ROOT, "data", "policy.json"),
+  policyExample: path.join(ROOT, "data", "policy.example.json"),
+  /** Emails already looked at for replies, and the ones waiting for the person to confirm. */
+  inbox: path.join(ROOT, "data", "runs", "inbox.json"),
+  /** Boards the daily run leaves alone until a date, because they asked for a human check or refused a burst. */
+  boardPauses: path.join(ROOT, "data", "runs", "board-pauses.json"),
+  /** What the scheduled run prints. */
+  dailyLog: path.join(ROOT, "data", "runs", "daily.log"),
+  /** The job-board accounts the person allowed, and the rule for making new ones. No secret is in it. */
+  accounts: path.join(ROOT, "data", "accounts.json"),
+  accountsExample: path.join(ROOT, "data", "accounts.example.json"),
+  /** What the tool remembers about each account between runs: when it last signed in, attempts, a pause after a lockout. */
+  accountsState: path.join(ROOT, "data", "runs", "accounts-state.json"),
+  /** The Gmail connection: the OAuth client id and the address. The tokens are in the Keychain. */
+  gmail: path.join(ROOT, "data", "gmail.json"),
+  /** Verification emails already used, so one message never answers two requests. */
+  verifications: path.join(ROOT, "data", "runs", "verifications.json"),
   /** Short locks around read-modify-write of the records, and the lock a browser run holds. */
   locks: path.join(ROOT, "data", "runs", "locks"),
   runLock: path.join(ROOT, "data", "runs", "run.lock"),
@@ -294,6 +312,103 @@ export const DOCUMENTS = {
   maxLetterWords: 260,
   /** Words that may be capitalized in a sentence without being a claim about the candidate. */
   plainWords: ["I", "A", "An", "The", "My", "In", "At", "On", "For", "With", "And", "As", "To", "Of", "This", "That", "It", "We", "You", "Your", "Our", "If", "When", "While", "After", "Before", "Over", "Since", "Through", "Then", "There", "Here", "What", "Which", "Who", "How", "Why", "Yes", "No", "Dear", "Hi", "Hello", "Sincerely", "Best", "Regards", "Thank", "Thanks", "Team", "Hiring", "Manager", "Regarding", "Re"],
+} as const;
+
+/** Reading the mailbox for replies to applications (`src/mail/status.ts`). */
+export const INBOX = {
+  /** How many days back a run looks, and how many emails it reads at most. */
+  days: 7,
+  maxMessages: 60,
+  /** How much of an email JEV is shown, when the rules cannot name it: its subject and Gmail's own preview, cut to these lengths. */
+  subjectChars: 160,
+  snippetChars: 240,
+  /** JEV's answer is taken only at or above this confidence. Under it the email waits for the person. */
+  jevConfidence: 0.8,
+  /** A company name shorter than this is too common a word to match on. */
+  minCompanyChars: 4,
+  clockSkewMs: 10 * 60_000,
+} as const;
+
+/**
+ * The daily run (`src/run/daily.ts`). No rate is known to be safe, so these are set to look like
+ * one careful person: few applications, spread over boards and employers, minutes apart, and a
+ * full stop at the first signs that a board is asking whether a person is there.
+ */
+export const DAILY = {
+  /** Applications a day when the policy names no number, and the most a policy or a flag may ask for. */
+  target: 15,
+  maxTarget: 25,
+  /** Applications to one job board in a day. */
+  perBoard: 8,
+  /** Applications to one employer in a day, and forms open or unconfirmed with one employer at once. */
+  perEmployerPerDay: 1,
+  openPerEmployer: 2,
+  /** The pause between two submissions to one board: a random time between these two. */
+  gapMs: [3 * 60_000, 6 * 60_000],
+  /** Boards that asked for a human check in one run before the whole run stops. */
+  challengesStopRun: 2,
+  /** Jobs one run opens at most, whatever became of them. */
+  maxAttempts: 30,
+  /** Longest one run lasts. */
+  maxMinutes: 90,
+  /** The most JEV may cost in a day before the run stops, when the policy names no number. */
+  jevBudgetUsd: 0.5,
+  /** The name the scheduled run is registered under with macOS, and the time it runs when none is given. */
+  label: "com.jev-job-search.daily",
+  at: "09:00",
+} as const;
+
+/** Signing in to job boards the person has an account on, and making an account where they allowed it (`src/accounts/`). */
+export const ACCOUNTS = {
+  /** The name every secret is kept under in the Keychain. */
+  keychainService: "jev-job-search",
+  /** The one password used for employer accounts, set with `jev accounts password`. */
+  passwordItem: "accounts-password",
+  /** How long a password the tool makes for a new account is. */
+  generatedLength: 24,
+  /** How long the window that asks for the password waits for the person, in seconds, and how many times it asks again after a password that misses a rule. */
+  askSeconds: 300,
+  askRounds: 3,
+  /** Sign-in tries per account per day. A wrong password is never retried; this bounds everything else (a sign-in before and after an email verification is two). */
+  maxLoginAttempts: 3,
+  /** How many times the tool asks a board to send its verification email again. */
+  maxResends: 1,
+  /** Steps one sign-in may take before it is handed to the person. */
+  maxSteps: 16,
+  /** New employer accounts per day when the person set no number of their own. */
+  maxNewAccountsPerDay: 3,
+  /** The pause after a click on a sign-in page before the page is read again. */
+  stepMs: 2_500,
+  /** Reads after a click on Sign In or Create Account, while the page has neither moved nor said anything. */
+  settleReads: 6,
+  /** Extra time a form on an account board gets, for the sign-in and the verification email, on top of RUN.fillTimeoutMs. */
+  signInBudgetMs: 240_000,
+  /** Reads of a page the sign-in does not know before it is handed to the person: a page still drawing itself gets this many. */
+  unknownReads: 4,
+  /** What the boards the tool supports ask of a new account's secret (Workday's rules). Only these rules are ever printed, never the secret. */
+  mustHave: { minLength: 8, digit: true, lower: true, upper: true, special: true },
+} as const;
+
+/** Reading the person's Gmail, with their consent, for the email a board sends to prove an inbox is theirs (`src/mail/`). */
+export const GMAIL = {
+  scope: "https://www.googleapis.com/auth/gmail.readonly",
+  authUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+  tokenUrl: "https://oauth2.googleapis.com/token",
+  revokeUrl: "https://oauth2.googleapis.com/revoke",
+  apiUrl: "https://gmail.googleapis.com/gmail/v1/users/me",
+  clientSecretItem: "gmail-client-secret",
+  refreshTokenItem: "gmail-refresh-token",
+  /** How long `gmail connect` waits for the person to finish Google's consent page. */
+  consentWaitMs: 5 * 60_000,
+  /** The waits between looks for a verification email. The total is how long a board gets to send it. */
+  pollMs: [5_000, 8_000, 12_000, 15_000, 20_000, 30_000, 30_000],
+  /** A verification email older than the request by more than this is not the one asked for. */
+  clockSkewMs: 60_000,
+  /** A verification request is given up after this long. */
+  requestTtlMs: 15 * 60_000,
+  /** Messages looked at per poll. More than one fresh match is ambiguous and is refused. */
+  maxResults: 5,
+  timeoutMs: 20_000,
 } as const;
 
 /** Help for the person when a form waits on them (`src/run/assist.ts`). */

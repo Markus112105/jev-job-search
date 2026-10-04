@@ -13,6 +13,101 @@ changed for a person using the tool and what changed for a contributor.
 
 Nothing yet.
 
+## [1.4.0] - 2026-10-03
+
+Accounts on Workday, a daily run, a dashboard that is the main screen,
+replies read from your mail, and a slash command for everything. All of it
+is off until you turn it on.
+
+### Added
+- **A slash command for every action**, so nobody has to type `npx`:
+  `/accounts`, `/daily`, `/resume`, `/status`, `/inbox` and `/report`
+  join the rest, and `/accounts` and `/daily` take short subcommands
+  (`/accounts signin acme`, `/daily dry`, `/daily schedule 09:00`). The
+  terminal form of each is in one table in the README.
+- **Accounts, for Workday**, where every employer keeps its own. Three
+  ways, from the simplest:
+  - `accounts signin <employer>`: the employer's page opens in the tool's
+    window, you sign in yourself, and the tool keeps the session.
+  - `accounts password <employer>`: a window on your Mac asks for that
+    employer's password and keeps it in the Keychain, so the tool can sign
+    in when the session ends. A refused password is never tried twice.
+  - Experimental: `accounts add workday` lets the tool make an account
+    where you have none, with its own random password per employer, and
+    says in plain words what that allows before it saves. `accounts setup
+    <employer>` is the one command that makes an account. A rehearsal
+    never does.
+- `accounts off` and `on` switch every sign-in with everything kept;
+  `accounts forget <employer or all>` removes the entry, its password and
+  its session from this Mac. Neither deletes the account at the employer.
+- Experimental: `gmail connect | status | disconnect`, read-only Gmail
+  through your own Google client, for the one email an employer sends to
+  prove your address. The default needs no setup: you click the link and
+  type `/resume`. Never used for a human-check code.
+- **The daily run.** `daily` searches, then fills and sends one job at a
+  time inside your standing policy (`data/policy.json`) and fixed limits:
+  15 a day unless your policy says otherwise and never more than 25, 8 to
+  one board, 1 to one employer, 3 to 6 minutes between two applications to
+  one board. A board that asks for a human check is left alone until
+  tomorrow, and the second one stops the run. It does nothing until the
+  policy exists, and ends with one line: "12 submitted. 3 need you. 5
+  could not be sent." `daily --dry` rehearses the day.
+- `schedule install --at HH:MM | remove | status`: runs `daily` every day
+  through macOS's own scheduler. Nothing is scheduled until you install
+  it.
+- **The dashboard is the main screen**, with four parts. Today: the day in
+  one line. Needs you: a question a form asked that your profile could not
+  answer, with a box and "Save answer and continue" (for this job, or for
+  every form when you tick "Remember"); forms that wait, with "Show the
+  form" and "Find the email"; submissions never confirmed; emails the tool
+  could not place. Applications: every job, with the reply that came back.
+  Automation: the daily run as a switch with a time, the next run, a Pause
+  button and your rules as a form.
+- `inbox`: replies to your applications, read from your connected Gmail by
+  sender, subject and preview, never the body. A reply settles an
+  application that was clicked and never confirmed.
+- `resume --submit`: after a sign-in you finished yourself, the form is
+  filled and sent. `status` lists what waits for you.
+- `apply <Workday link>`, and Workday postings read from Workday's own
+  posting data for rating.
+- `docs/ACCOUNTS.md`, `docs/DAILY.md`, and an accounts line in `doctor`.
+
+### Changed
+- `/setup` ends with one application filled and waiting for your yes, not
+  with a list of commands.
+- The README opens with who the tool is for, what it needs, what it costs
+  and one way to start, and no longer says both that it writes cover
+  letters and that it will not.
+- A Workday job is kept by `discover` once you set an employer up, and
+  `apply` takes one job per new employer and no more new accounts than the
+  day allows. Without accounts, nothing changes.
+- A sign-in the tool cannot finish no longer closes the page: it stays
+  open, you get a notification, and the run moves on.
+- The dashboard takes a change only with a token it gives its own page,
+  and refuses to change a job a run is working on.
+- The in-page scripts find a control by Workday's own name for it, never
+  read a one-time-code box, and click through the sheet Workday lays over
+  its buttons.
+
+### For contributors
+- `src/accounts/`: `ensureSignedIn` is the only place a credential is
+  typed; an `Adapter` names a board's controls and reads its answers;
+  `AuthPage` is the seam the tests script. `src/mail/`: `gmail.ts`,
+  `verification.ts`, `status.ts`. `src/run/`: `daily.ts`, `policy.ts`,
+  `schedule.ts`, `inbox.ts`. `src/report/needs.ts`.
+- Two test files drive real code through headless Chrome on the loopback
+  address: the sign-in against a mock board, and the dashboard page
+  against made-up records. They are skipped where Chrome is not installed.
+- An independent review of the sign-in found nine problems before
+  release; all are fixed with tests. The main ones: a refused sign-in is
+  never retried, an account is written down only once the board shows it
+  exists, and the sender check on a verification email reads the address
+  and the mail server's result strictly.
+- Not verified against a real account: the wording Workday uses after a
+  wrong password, a lockout or a duplicate sign-up; its verification
+  emails; and its application pages behind the sign-in. Wording the
+  adapter does not know stops the job for the person.
+
 ## [1.3.0] - 2026-10-03
 
 ### Added

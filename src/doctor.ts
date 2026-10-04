@@ -7,7 +7,10 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import path from "node:path";
-import { BROWSER, childEnv, DOCTOR, PATHS, ROOT, WRITER, writerBackend } from "./config.js";
+import { BROWSER, childEnv, DOCTOR, GMAIL, PATHS, ROOT, WRITER, writerBackend } from "./config.js";
+import { loadAccounts } from "./accounts/config.js";
+import { defaultStore, type SecretStore } from "./accounts/secrets.js";
+import { loadGmail } from "./mail/gmail.js";
 import { askWriter } from "./answers/resolve.js";
 import { JevClient } from "./jev/client.js";
 import { noul } from "./jev/questions.js";
@@ -95,6 +98,28 @@ export function checkQueue(): Check {
   return { name: "Job queue", ok: queued > 0 && fresh, optional: true, detail: `${queued} jobs queued, last refreshed ${ageHours < 1 ? "under an hour" : `${Math.round(ageHours)} hours`} ago`, fix };
 }
 
+/**
+ * Job-board accounts are optional. When the person set some up, this says whether what a sign-in
+ * needs is there: the password in the Keychain, and Gmail when they let the tool read verification mail.
+ */
+export function checkAccounts(store: SecretStore = defaultStore(), files: { accounts?: string; gmail?: string } = {}): Check {
+  const name = "Job-board accounts";
+  let file;
+  try {
+    file = loadAccounts(files.accounts);
+  } catch (err) {
+    return { name, ok: false, optional: true, detail: (err instanceof Error ? err.message : String(err)).slice(0, 200), fix: "Correct data/accounts.json, or set it up again with /accounts" };
+  }
+  const rule = file.providers.workday;
+  if (!rule && !file.accounts.length) return { name, ok: true, optional: true, detail: "not set up, so jobs on Workday are skipped (optional: /accounts)", fix: "" };
+  if (!file.enabled) return { name, ok: true, optional: true, detail: "set up, and switched off (/accounts on)", fix: "" };
+  const wantsMail = !!rule?.emailVerification || file.accounts.some((a) => a.emailVerification);
+  const mail = !!loadGmail(files.gmail) && !!store.get(GMAIL.refreshTokenItem);
+  const how = rule?.mode === "create_if_missing" ? `sign in, or make an account (at most ${rule.maxNewAccountsPerDay} new a day)` : "sign in to the employers you listed";
+  const verify = !wantsMail ? "" : mail ? ", verification emails read from Gmail" : ", you click each verification link (Gmail is not connected)";
+  return { name, ok: true, optional: true, detail: `Workday: ${how}, ${file.accounts.filter((a) => a.mode !== "off").length} employer account(s)${verify}`, fix: "" };
+}
+
 /** One tiny JEV call: proves the key is valid and has credit. */
 export async function checkKeyOnline(): Promise<Check> {
   const fix = "Check the key at https://openrouter.ai/keys and that the account has credit";
@@ -132,7 +157,7 @@ export async function runChecks(online: boolean): Promise<Check[]> {
   const { check: profileCheck, profile } = checkProfile();
   const claude = checkClaude();
   const key = checkKey();
-  const checks = [checkNode(), checkChrome(), claude, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue()];
+  const checks = [checkNode(), checkChrome(), claude, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue(), checkAccounts()];
   if (online) {
     if (key.ok) checks.push(await checkKeyOnline());
     if (claude.ok) checks.push(await checkClaudeOnline());

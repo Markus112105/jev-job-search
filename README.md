@@ -6,7 +6,15 @@
 [![release](https://img.shields.io/github/v/release/qbeka/jev-job-search?label=release)](https://github.com/qbeka/jev-job-search/releases)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-An open-source job application tool built on [Claude Code](https://claude.com/claude-code). Clone it, fill in your profile, and let it find software internships and new-grad roles, fill the application forms in a Chrome window you can watch, read every answer back from the page, and send the ones you approve. A resume and a cover letter written for each job are one flag away.
+An open-source job application tool built on [Claude Code](https://claude.com/claude-code). It finds software internships and new-grad roles, fills the application forms in a Chrome window you can watch, reads every answer back from the page, and sends the ones you approve.
+
+| | |
+|---|---|
+| **Who it is for** | Students and new graduates applying to software roles in Canada, the United States or remotely, who are comfortable opening a terminal once. It writes in English. |
+| **What you need** | A Mac with Google Chrome, [Node.js](https://nodejs.org) 22, and [Claude Code](https://claude.com/claude-code) with a Claude Pro or Max subscription. |
+| **What it costs** | Your Claude subscription, plus a few dollars of [OpenRouter](https://openrouter.ai/keys) credit for JEV: about 1 to 1.5 cents per 10 applications. Nothing else. |
+| **How to start** | Clone it, run `npm install`, open `claude` in the folder and type `/setup`. About 20 minutes, most of it your answers. It ends with one application filled and waiting for your yes. |
+| **What it does not do** | It does not lie on a form, pass a human check, or send what it could not verify. It is not a download-and-open app yet: there is no installer. |
 
 > This is an independent open-source project. It is not affiliated with, endorsed by or maintained by Anthropic, OpenRouter, or any job board. There is no token, coin or paid tier; the only ways to support it are using it and contributing on GitHub.
 
@@ -16,7 +24,7 @@ It is how I run my own search. I sent 100 applications in less than 10 minutes a
 
 ## What this is
 
-A command-line tool and nine Claude Code skills that run it with you in the loop. Two models share the thinking: [JEV](https://openrouter.ai/typesafe/jev-1.13) makes every decision that has a fixed set of answers (which of your details goes in this box, which option, how good a fit this job is) for a fraction of a cent, and Claude, on your own subscription, writes the sentences. The code does the rest: finds the jobs, drives Chrome, checks every answer on the page, and keeps your records.
+A command-line tool, a set of Claude Code skills that run it with you in the loop, and a dashboard on your own machine. Two models share the thinking: [JEV](https://openrouter.ai/typesafe/jev-1.13) makes every decision that has a fixed set of answers (which of your details goes in this box, which option, how good a fit this job is) for a fraction of a cent, and Claude, on your own subscription, writes the sentences. The code does the rest: finds the jobs, drives Chrome, checks every answer on the page, and keeps your records.
 
 ```
 /setup              /discover              /apply
@@ -35,7 +43,7 @@ ready              fit scores             Send only what is ready
                    -> /apply            manual.csv for what is yours
 ```
 
-The tool never lies on a form, never signs in anywhere, never passes a human check for you, and never sends a form it could not verify. What it cannot finish truthfully, it lists for you with the reason.
+The tool never lies on a form, signs in only with an account you set up for it, never passes a human check for you, and never sends a form it could not verify. What it cannot finish truthfully, it lists for you with the reason.
 
 ## Prerequisites
 
@@ -89,23 +97,40 @@ Fills the best queued forms, one Chrome tab each, answers what JEV left open wit
 /apply https://jobs.ashbyhq.com/company/job-id
 ```
 
-A Greenhouse, Lever or Ashby link is read from the board, rated, and filled like any other. For another board, `/discover` picks it up when it appears on the public lists.
+A Greenhouse, Lever or Ashby link is read from the board, rated, and filled like any other. So is a Workday link, once you have run `/accounts`. For another board, `/discover` picks it up when it appears on the public lists.
 
 ## Other commands
 
-`/setup`, `/discover` and `/apply` are the workflow. Six more skills and a handful of terminal commands extend it once your profile is in place:
+`/setup`, `/discover` and `/apply` are the workflow. Eleven more skills extend it once your profile is in place. Each is typed in Claude Code as written; none needs a terminal:
 
 - **`/tailor <job id> [--cover]`** writes a one-page resume for the job from your profile and the posting, and with `--cover` a one-page cover letter, and shows you the PDFs. Every number and every name of a tool, a place or a company in the draft is checked against your profile in code; the keywords the posting wants and your profile cannot support are listed, never stuffed in. `/apply --tailor --cover` writes and attaches them as it applies. See [A resume and a cover letter written for the job](#a-resume-and-a-cover-letter-written-for-the-job).
-- **`/report`** opens a dashboard on your own machine: applications sent, today, waiting for you, left for you; sent per day and per board; every job with its status, which you can change by hand, and a notes box per row. `npx jev report --static applications/report.html` writes a snapshot page to keep. Nothing leaves your machine.
+- **`/report`** opens the dashboard on your own machine, the main screen once you are set up. **Today** is the day in one line. **Needs you** lists everything only you can do: a question a form asked that your profile could not answer, with a box and "Save answer and continue"; a form waiting for a code or a sign-in, with "Show the form"; a submission that was never confirmed. **Applications** is every job with its status, your notes and the reply that came back. **Automation** is the daily run as a switch, a time and your rules. Nothing leaves your machine.
+- **`/inbox`** reads your connected Gmail, read-only, for replies to applications you sent: received, rejected, an assessment, an interview, an offer. It looks at the sender, the subject and Gmail's own short preview, never the body. What it is not sure of waits for you under "Needs you".
 - **`/expand`** reads the public places your profile already links to (your GitHub repositories, your portfolio site) and proposes projects, skills and facts that are missing from the profile, each with its source. Nothing is added without your yes.
 - **`/add-source`** adds a job board or a public list as a source: it inspects the site, writes the source in the shape of the shipped ones, tests it on a captured sample and runs one live query before registering it.
+- **`/accounts`** lets the tool apply on Workday, where every employer wants its own account. The simple way: `/accounts signin <employer>` opens that employer's page, you sign in once yourself, and the tool keeps the session. Storing a password, and letting the tool make accounts for you (experimental), are there when you want them. Off until you turn it on. See [Jobs that want an account](#jobs-that-want-an-account).
+- **`/daily`** is the daily run: a few applications a day with nobody watching, inside a standing policy you write (how many, where, which employers never) and limits meant to look like one careful person: 15 a day, one per employer, minutes between two applications to one board, a full stop when boards start asking for a human check. `/daily dry` rehearses it, `/daily run` runs today's, and `/daily schedule 09:00` makes it run by itself; nothing is scheduled until you type that. See [docs/DAILY.md](docs/DAILY.md).
+- **`/resume`** picks up the forms that wait for you. A board that emails a code, shows a robot check or needs a sign-in only you can finish leaves its form open in the tool's window; you do that one thing there, type `/resume`, and the application is recorded. It also settles a form whose Submit was clicked with no confirmation seen, which is never sent twice.
+- **`/status`** says where you stand in a few lines: sent today and in total, what waits for you, what is left for you and why, how fresh the queue is, what it has cost, and the next step.
 - **`/profile`** changes your profile, your standing answers (how recurring questions are answered), your drafts and your voice guide with you. When a form answer looked wrong, this is where you fix it, once.
-- **`resume`** watches the forms left open for you (an emailed code, a robot check) while you finish them, and records each application when its confirmation shows. **`reconcile`** settles a form whose Submit was clicked with no confirmation seen: it reads the tab again and records it as applied or as not sent. Such a form is never sent twice.
-- **`log`**, **`status`** and **`cost`** show your applications (`log --manual` lists what the tool left for you), the totals and skip reasons, and what you have spent. `npx jev log --open` opens your applications in your spreadsheet program.
-- **`doctor`** checks everything a run needs and names the next step. `/setup` runs it for you.
-- **`knowledge --share`** copies what your runs learned about job sites into the repo, so a pull request can hand it to everyone. It holds site names and kinds of controls, nothing about you.
 
-Every terminal command is `npx jev <command>` from the project folder; `npx jev --help` lists them all, including the apply loop one step at a time (`fill`, `resolve`, `submit`, `check`, `inspect`, `set`).
+#### In a terminal
+
+Every skill runs a command you can also type yourself, as `npx jev <command>` from the project folder. You never have to; scripts and schedulers do.
+
+| Skill | The same in a terminal |
+|---|---|
+| `/discover` | `npx jev discover` |
+| `/apply`, `/apply <link>` | `npx jev apply --count 10 --submit`, `npx jev apply <link> --submit` |
+| `/tailor <job id>` | `npx jev tailor <job id> --cover` |
+| `/report` | `npx jev report --open` |
+| `/accounts`, `/accounts signin acme`, `/accounts password acme` | `npx jev accounts`, `npx jev accounts signin acme`, `npx jev accounts password acme` |
+| `/daily dry`, `/daily run`, `/daily schedule 09:00`, `/daily stop` | `npx jev daily --dry`, `npx jev daily`, `npx jev schedule install --at 09:00`, `npx jev schedule remove` |
+| `/resume` | `npx jev resume`, `npx jev reconcile` |
+| `/status` | `npx jev status`, `npx jev doctor`, `npx jev cost`, `npx jev log` |
+| `/inbox` | `npx jev inbox --days 7` |
+
+`npx jev log --open` opens your applications in your spreadsheet program, `npx jev knowledge --share` copies what your runs learned about job sites into the repo for a pull request (site names and kinds of controls, nothing about you), and `npx jev --help` lists everything, including the apply loop one step at a time (`fill`, `resolve`, `submit`, `check`, `inspect`, `set`).
 
 ## File structure
 
@@ -120,6 +145,11 @@ jev-job-search/
 │   ├── report/                # /report: the dashboard
 │   ├── expand/                # /expand: enrich the profile from your public links
 │   ├── add-source/            # /add-source: a new job board or list
+│   ├── accounts/              # /accounts: boards that want an account (Workday)
+│   ├── daily/                 # /daily: the daily run and its schedule
+│   ├── inbox/                 # /inbox: replies to your applications, from your mail
+│   ├── resume/                # /resume: pick up the forms that wait for you
+│   ├── status/                # /status: where you stand, in a few lines
 │   └── profile/               # /profile: change what the tool knows about you
 ├── applications/              # Your records (git-ignored)
 │   ├── applied.csv            #   what was sent, newest first
@@ -131,6 +161,8 @@ jev-job-search/
 │   ├── transcript.pdf         #   for forms that ask for one
 │   └── tailored/              #   <Company>_<Role>_<id>/ resume.pdf, cover.pdf, resume.md
 ├── data/                      # Your profile and the tool's working files (git-ignored, examples tracked)
+│   ├── accounts.json          #   the job-board accounts you allowed (no password in it)
+│   ├── policy.json            #   your standing instructions for the daily run
 │   ├── profile.json           #   who you are; standing answers to recurring questions
 │   ├── bank.json              #   your starting drafts for common open questions
 │   ├── voice.local.md         #   how you write
@@ -168,7 +200,7 @@ Each job goes through the same loop on its own, and its result is printed the mo
 
 - **Decisions and sentences are split.** JEV, a model built for typed judgements, makes every fixed-answer choice and returns probabilities, not text, in about half a second for a fraction of a cent. Claude writes only the sentences. A form with no open question never calls Claude at all.
 - **Nothing is trusted until it is read back.** Every value is read from the page after it is written. A wrong dropdown pick, a date a masked box mangled, or a value a site quietly dropped is caught before Submit, not after.
-- **It never lies, signs or sneaks.** Work authorization, dates and education come from your profile and are never bent to fit a posting. A signature, an NDA, a human check or a sign-in is yours; the tool stops and tells you.
+- **It never lies, signs or sneaks.** Work authorization, dates and education come from your profile and are never bent to fit a posting. A signature, an NDA and a human check are yours; the tool stops and tells you. It signs in only with an account you set up for it.
 - **It learns per site.** How each board's controls take values, which sites want a sign-in, which email codes, is recorded after every form and read before the next, and shared through the repo.
 - **Every record is a plain CSV** with fixed column names, at the top of the project, so you and your scripts can read it.
 
@@ -223,7 +255,21 @@ Everything about you is in data files, not in the code. `/profile` changes any o
 
 ### Where the jobs come from, and adding a board
 
-Jobs come from public lists on GitHub (the SimplifyJobs internship and new-grad lists among them) and from the company boards those lists point at, read through the boards' own APIs for Greenhouse, Lever and Ashby. Workday, iCIMS, Taleo, Oracle and the other boards that want an account are filtered out; a site found behind a sign-in during a run is remembered and skipped. [docs/SOURCES.md](docs/SOURCES.md) describes each source and how to add one, and `data/imports/` takes a CSV of your own.
+Jobs come from public lists on GitHub (the SimplifyJobs internship and new-grad lists among them) and from the company boards those lists point at, read through the boards' own APIs for Greenhouse, Lever and Ashby. Workday postings are read from Workday's own posting data and are kept once you allow accounts with `/accounts`; until then they are filtered out. iCIMS, Taleo, Oracle and the other boards that want an account are filtered out, and a site found behind a sign-in during a run is remembered and skipped. [docs/SOURCES.md](docs/SOURCES.md) describes each source and how to add one, and `data/imports/` takes a CSV of your own.
+
+### Jobs that want an account
+
+Every employer on Workday keeps its own accounts, and that is a large share of all postings. The tool skips them until you set an employer up, and there are three ways, from the simplest:
+
+```
+/accounts signin acme
+```
+
+1. **You sign in once.** That employer's page opens in the tool's Chrome window and you sign in yourself, however it asks. The tool keeps the session and fills that employer's forms from then on. Nothing else is stored.
+2. **It signs in for you.** `/accounts password acme` opens a window on your Mac for that employer's password. It goes into your Keychain, and the tool signs in when the session has ended. A password an employer refuses is never tried twice.
+3. **It makes accounts (experimental).** `/accounts add workday` asks whether the tool may make an account where you have none, accept the account terms, and read the verification email, and shows what that allows before it saves. Each new account gets its own random password in your Keychain. A rehearsal never makes one.
+
+A robot check, a phone code, a passkey and single sign-on stop the job with the page left open for you; `/resume` carries on once you are through. `/accounts off` stops every sign-in, and `/accounts forget all` removes the stored passwords and sessions from your Mac. Neither deletes an account at an employer. [docs/ACCOUNTS.md](docs/ACCOUNTS.md) has every step, the Gmail connection, and what has and has not been tested.
 
 ### Which jobs it keeps
 
@@ -264,13 +310,22 @@ npx jev templates --use mine
   agree to a contract, the tool leaves it for you.
 - **It will not choose a date for you.** If a form asks you to pick an
   interview or test slot, the tool leaves it for you.
-- **It will not sign in anywhere, and it will not create accounts.** A job
-  behind a sign-in goes on your by-hand list.
+- **It will not sign in or create an account unless you set that up.**
+  Without `/accounts`, a job behind a sign-in goes on your by-hand list.
+  With it, the tool signs in on Workday only, never retries a refused
+  password, never makes an account in a rehearsal, and never ticks a
+  marketing box.
 - **It will not pass a "prove you are human" test for you.** That covers
-  picture puzzles and the codes a board emails you.
-- **It will not read your email.**
-- **It will not write a cover letter or give references.** It skips jobs
-  that require them.
+  picture puzzles and the codes a board emails you because it suspects a
+  robot.
+- **It will not read your email**, with one exception you can turn on: the
+  email an employer sends to prove your address when an account is made.
+  Access is read-only, and that one email is all it looks for.
+- **It will not make up references.** A job that requires them is skipped.
+- **It will not write a cover letter unless you asked for one**, with
+  `/apply --cover` or in your profile. Without that, a job that requires
+  one is skipped. A letter it does write is checked against your profile
+  like the resume.
 - **It will not give your GPA** unless the form cannot be sent without it,
   or you chose to always give it.
 

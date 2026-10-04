@@ -5,11 +5,13 @@
  * Fills run side by side and paced per site, the writer takes a few forms at
  * a time, and submissions go one at a time with a pause per site.
  */
-import { RUN } from "../config.js";
+import { ACCOUNTS, RUN } from "../config.js";
+import { accountGate, adapterFor, capabilityFor } from "../accounts/capability.js";
+import { signedInNow } from "../accounts/gate.js";
 import { ensureBrowser, sleep } from "../browser/cdp.js";
 import { fillJob, nextPage, resolveJob, shouldAdvance } from "../browser/formRunner.js";
 import { blockedReport, loadReport, saveReport, type FillReport } from "../browser/report.js";
-import { closeJobTab, hasOpenTab, loadSession, mutateSession } from "../browser/session.js";
+import { closeJobTab, hasOpenTab, loadSession, mutateSession, pageFor } from "../browser/session.js";
 import { checkJob, submitJob, watchForConfirmation } from "../browser/submit.js";
 import { assist, waitingWords } from "./assist.js";
 import { logNotes } from "../answers/resolve.js";
@@ -29,6 +31,8 @@ import { printFill } from "./print.js";
 export type RunOptions = { submit: boolean; dry: boolean; fresh: boolean; quiet: boolean; fillOnly?: boolean };
 
 const asJob = (e: QueueEntry) => e.job as unknown as Job;
+/** The profile as this one job sees it: with the answers the person gave for this job's own questions. */
+const forJob = (profile: Profile, e: QueueEntry | null): Profile => (e?.answers?.length ? { ...profile, answers: [...profile.answers, ...e.answers] } : profile);
 const hostOf = (url: string) => {
   try {
     return new URL(url).hostname;
@@ -44,24 +48,42 @@ const hostOf = (url: string) => {
  * lets an unconfirmed one through until it is settled.
  */
 export function takeJobs(ids: string[], o: { count: number; dry: boolean; resubmit?: boolean }): QueueEntry[] {
-  if (o.dry) return pickJobs(loadQueue().entries, ids, o).picked;
+  if (o.dry) {
+    const { picked, refused } = pickJobs(loadQueue().entries, ids, o, accountGate());
+    for (const r of refused) console.log(`${r.id}  not taken: ${r.why}`);
+    return picked;
+  }
   return mutateQueue((q) => {
-    const { picked, refused } = pickJobs(q.entries, ids, o);
+    const { picked, refused } = pickJobs(q.entries, ids, o, accountGate());
     for (const r of refused) console.log(`${r.id}  not taken: ${r.why}`);
     for (const e of picked) updateEntry(q, e.job.id, { status: "in_progress", statusReason: null, waitingFor: null, attempts: e.attempts + 1 });
     return picked;
   });
 }
 
-/** Which of the queue's jobs a run may take, and which named ids it must refuse, with the reason. A rehearsal sends nothing, so it may take any. */
-export function pickJobs(entries: QueueEntry[], ids: string[], o: { count: number; dry: boolean; resubmit?: boolean }): { picked: QueueEntry[]; refused: { id: string; why: string }[] } {
-  if (!ids.length) return { picked: sortEntries(entries.filter((e) => e.status === "queued")).slice(0, o.count), refused: [] };
+/**
+ * Which of the queue's jobs a run may take, and which named ids it must refuse, with the reason. A
+ * rehearsal sends nothing, so it may take any. `gate` speaks for the boards that want an account:
+ * a job there is taken only when the tool may sign in today, and never more new accounts than the day allows.
+ */
+export function pickJobs(entries: QueueEntry[], ids: string[], o: { count: number; dry: boolean; resubmit?: boolean }, gate: (url: string) => string | null = () => null): { picked: QueueEntry[]; refused: { id: string; why: string }[] } {
+  if (!ids.length) {
+    const picked: QueueEntry[] = [];
+    for (const e of sortEntries(entries.filter((x) => x.status === "queued"))) {
+      if (picked.length >= o.count) break;
+      // A job that must wait for another day stays in the queue, untouched.
+      if (!gate(e.job.url)) picked.push(e);
+    }
+    return { picked, refused: [] };
+  }
   const picked: QueueEntry[] = [];
   const refused: { id: string; why: string }[] = [];
   for (const id of ids) {
     const e = entries.find((x) => x.job.id === id);
     if (!e) throw new Error(`No queue entry ${id}`);
-    if (o.dry) picked.push(e);
+    const held = gate(e.job.url);
+    if (held) refused.push({ id, why: held });
+    else if (o.dry) picked.push(e);
     else if (e.status === "submission_unknown") refused.push({ id, why: `Submit was clicked on this form before and no confirmation was seen. Settle it first: npx jev reconcile ${id}` });
     else if (e.status === "applied" && !o.resubmit) refused.push({ id, why: `already applied on ${e.appliedAt?.slice(0, 10) ?? "an earlier day"}. To send it again on purpose, add --resubmit` });
     else picked.push(e);
@@ -103,14 +125,16 @@ export const endIfAbandoned = () => {
  * back as blocked. A fill that runs out of time is stopped: its tab is closed, which fails every
  * call it was waiting on, and its signal keeps it from writing a plan or a report over the next attempt.
  */
-async function fillOnce(jev: JevClient, profile: Profile, e: QueueEntry): Promise<FillReport> {
+async function fillOnce(jev: JevClient, profile: Profile, e: QueueEntry, dry = false): Promise<FillReport> {
   const attempt = new AbortController();
   let timer: NodeJS.Timeout | undefined;
-  const filling = fillJob(jev, profile, asJob(e), { signal: attempt.signal });
+  const filling = fillJob(jev, forJob(profile, e), asJob(e), { signal: attempt.signal, dry });
   filling.catch(() => undefined);
   try {
+    // A form behind a sign-in gets longer: the sign-in and its verification email take their own time.
+    const limit = RUN.fillTimeoutMs + (adapterFor(applyUrlFor(asJob(e))) ? ACCOUNTS.signInBudgetMs : 0);
     const tooLong = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`the form did not finish loading and filling in ${RUN.fillTimeoutMs / 1000}s`)), RUN.fillTimeoutMs);
+      timer = setTimeout(() => reject(new Error(`the form did not finish loading and filling in ${limit / 1000}s`)), limit);
     });
     return await Promise.race([filling, tooLong]);
   } catch (err) {
@@ -134,9 +158,18 @@ const worthAnotherGo = (r: FillReport) => r.state === "filled" && r.page === 1 &
 /** Settles what JEV left open on the page a job's tab shows: from the answer memory, or by Claude. A writer error leaves the form as it was. */
 export async function resolvePage(jev: JevClient, profile: Profile, entry: QueueEntry | null, r: FillReport, fresh: boolean): Promise<FillReport> {
   try {
-    return await resolveJob(profile, entry, r.jobId, { jev, fresh });
+    return await resolveJob(forJob(profile, entry), entry, r.jobId, { jev, fresh });
   } catch (err) {
     return { ...r, ready: false, reason: `writer: ${err instanceof Error ? err.message : String(err)}` };
+  }
+}
+
+/** True when a job waits at a sign-in and not at a filled form: its last report says so. */
+function waitsAtSignIn(id: string): boolean {
+  try {
+    return !!loadReport(id).auth;
+  } catch {
+    return false;
   }
 }
 
@@ -145,7 +178,7 @@ const ROBOT_REASON = "the site asks you to confirm you are not a robot. The fill
 const UNKNOWN_REASON = "Submit was clicked and no confirmation was seen";
 
 /** Keeps a job's tab for later, with why: it waits for the person, or for a confirmation. */
-const keepTab = (id: string, state: "awaiting_user_action" | "submission_unknown") =>
+const keepTab = (id: string, state: "awaiting_user_action" | "awaiting_email_verification" | "submission_unknown") =>
   mutateSession((s) => {
     const tab = s[id];
     if (tab) s[id] = { ...tab, state, since: new Date().toISOString() };
@@ -268,10 +301,43 @@ export async function reconcile(jev: JevClient, id: string): Promise<"applied" |
  * Watches a form that waits on the person while they finish it, and records the application when
  * the confirmation shows. Nothing is typed or clicked. A form whose tab is gone goes to the by-hand list.
  */
-export async function resume(jev: JevClient, id: string, opts: { stop?: () => boolean } = {}): Promise<"applied" | "still_waiting" | "gone"> {
+export async function resume(jev: JevClient, id: string, opts: { stop?: () => boolean } = {}): Promise<"applied" | "still_waiting" | "gone" | "signed_in" | "retry"> {
   if (!(await hasOpenTab(id))) {
     record(id, "needs_review", "the form that was left open for you is closed. Apply by hand, or run: npx jev apply " + id + " --submit");
     return "gone";
+  }
+  if (waitsAtSignIn(id)) {
+    // The job waits at a sign-in. Once the tab shows the application, the job goes back to the queue to be filled.
+    const entry = loadQueue().entries.find((e) => e.job.id === id) as QueueEntry;
+    const url = applyUrlFor(asJob(entry));
+    const seen = async () => {
+      const page = await pageFor(id);
+      try {
+        return await signedInNow(page, url).catch(() => false);
+      } finally {
+        page.close();
+      }
+    };
+    if (await seen()) {
+      record(id, "queued", null);
+      return "signed_in";
+    }
+    // What the person did somewhere else (a link clicked in their own mail, a sign-out) never shows in this tab.
+    // The sign-in is the only thing that can find it out, so it is run again, unless the account is paused.
+    const elsewhere = entry.status === "awaiting_email_verification" || entry.waitingFor === "email_link" || entry.waitingFor === "login";
+    if (elsewhere && capabilityFor(url)?.verdict === "can") {
+      record(id, "queued", null);
+      return "retry";
+    }
+    const deadline = Date.now() + RUN.resumeWaitMs;
+    while (Date.now() < deadline && !opts.stop?.()) {
+      await sleep(ACCOUNTS.stepMs);
+      if (await seen()) {
+        record(id, "queued", null);
+        return "signed_in";
+      }
+    }
+    return "still_waiting";
   }
   if ((await watchForConfirmation(jev, id, { timeoutMs: RUN.resumeWaitMs, ...(opts.stop ? { stop: opts.stop } : {}) })) === "submitted") {
     recordApplied(id);
@@ -293,7 +359,7 @@ export async function sweep(): Promise<void> {
     const tab = session[e.job.id];
     if (RUN_OWNED.includes(e.status)) {
       if (!tab || !(await hasOpenTab(e.job.id))) record(e.job.id, "queued", null);
-    } else if (e.status === "awaiting_user_action" && (!tab || Date.parse(tab.since ?? "") < old || !(await hasOpenTab(e.job.id)))) {
+    } else if ((e.status === "awaiting_user_action" || e.status === "awaiting_email_verification") && (!tab || Date.parse(tab.since ?? "") < old || !(await hasOpenTab(e.job.id)))) {
       record(e.job.id, "needs_review", `${e.statusReason ?? "it waited for you"}. It was left open too long and is closed now: apply by hand`);
       await closeJobTab(e.job.id).catch(() => undefined);
     }
@@ -338,7 +404,7 @@ async function walk(jev: JevClient, profile: Profile, e: QueueEntry, first: Fill
     if (r.state !== "filled") return r;
     r = await resolvePage(jev, profile, e, r, o.fresh);
     if (!shouldAdvance(r)) return r;
-    r = await nextPage(jev, profile, asJob(e), { dry: o.dry });
+    r = await nextPage(jev, forJob(profile, e), asJob(e), { dry: o.dry });
   }
 }
 
@@ -353,7 +419,15 @@ async function settle(jev: JevClient, r: FillReport, o: RunOptions): Promise<boo
   }
   if (o.fillOnly) return false;
   if (outcome.action === "send") return o.submit ? submitAndRecord(jev, r.jobId, false) : false;
-  const rec = record(r.jobId, outcome.action, outcome.reason);
+  const rec = record(r.jobId, outcome.action, outcome.reason, {}, outcome.waitingFor ?? null);
+  if (outcome.action === "awaiting_user_action" || outcome.action === "awaiting_email_verification") {
+    // A sign-in only the person can finish: the page stays open for them, they are told, and the run moves on.
+    const waitingFor = outcome.waitingFor ?? (outcome.action === "awaiting_email_verification" ? "email_link" : "unknown");
+    keepTab(r.jobId, outcome.action);
+    assist(rec.job, waitingFor, r.url);
+    console.log(`  left open for you: ${waitingWords(waitingFor)}. Then run: npx jev resume`);
+    return false;
+  }
   if (outcome.rememberSite) rememberWalledHost(rec.job.url);
   // A form the tool cannot finish is closed in a sending run: it is on the by-hand list with its link.
   if (outcome.action !== "needs_review" || o.submit) await closeJobTab(r.jobId);
@@ -384,7 +458,7 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
   };
   await paced(entries, (e) => hostOf(applyUrlFor(asJob(e))), async (e) => {
     prefetch(entries.indexOf(e));
-    const first = await fillOnce(jev, profile, e);
+    const first = await fillOnce(jev, profile, e, o.dry);
     reports[entries.indexOf(e)] = first;
     const rest = (async () => {
       const r = o.fillOnly ? first : await writer(() => walk(jev, profile, e, first, o));
@@ -403,7 +477,7 @@ export async function pipeline(entries: QueueEntry[], o: RunOptions): Promise<{ 
   // checker, for one. With five forms side by side no tab keeps it for long. These forms are filled again, one at a time.
   for (const e of again) {
     try {
-      const first = await fillOnce(jev, profile, e);
+      const first = await fillOnce(jev, profile, e, o.dry);
       await finish(e, o.fillOnly ? first : await walk(jev, profile, e, first, o));
     } catch (err) {
       console.log(`${e.job.id}  ${err instanceof Error ? err.message : String(err)}`);
