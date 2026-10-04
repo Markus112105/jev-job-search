@@ -7,7 +7,7 @@ import { BROWSER, FORM } from "../config.js";
 import type { DumpedField } from "../forms/fields.js";
 import { sleep, type Page } from "./cdp.js";
 import { inFront, norm, shownValues, trace, type Point } from "./session.js";
-import { showsValue } from "../util/dates.js";
+import { CHOICE_PATH, showsValue } from "../util/dates.js";
 
 /** Polls an open dropdown until its options settle, or until `enough` says the wanted one has arrived. */
 async function waitOptions(page: Page, selector: string, typed: boolean, enough?: (opts: string[]) => boolean): Promise<string[]> {
@@ -47,6 +47,8 @@ export function pickOption(options: string[], value: string, hints: string[]): s
   const starts = options.filter((o) => norm(o).startsWith(want));
   const includes = options.filter((o) => norm(o).includes(want));
   const pool = exact.length ? exact : starts.length ? starts : includes;
+  // A short value ("+1") sits inside many options. With nothing of the candidate's to tell them apart, none of them is picked.
+  if (!exact.length && !starts.length && want.length <= FORM.shortAnswerChars && includes.length > 1 && score(best(includes) ?? "") === 0) return null;
   if (pool.length) return best(pool);
   const head = norm(value.split(",")[0] ?? "");
   if (!head || head === want) return null;
@@ -70,12 +72,35 @@ async function openDropdown(page: Page, selector: string): Promise<boolean> {
 async function steadyPoint(page: Page, selector: string, label: string): Promise<Point> {
   let last = await page.awj<Point>("optionPoint", selector, label);
   for (let read = 0; read < FORM.steadyReads; read++) {
+    // The pointer goes there first. A list that follows the pointer (Workday's) moves under it, and the click waits for that.
+    if (last.ok) await page.hover(last.x, last.y);
     await sleep(BROWSER.pollMs);
     const now = await page.awj<Point>("optionPoint", selector, label);
     if (now.ok && last.ok && Math.abs(now.x - last.x) < 1 && Math.abs(now.y - last.y) < 1) return now;
     last = now;
   }
   return { ...last, ok: false };
+}
+
+/** A control a form has put out of sight while it saves (Workday hides the page for a moment) is waited for, a little. */
+async function whenOn(page: Page, selector: string): Promise<void> {
+  const started = Date.now();
+  for (;;) {
+    const state = await page.awj<string>("state", selector).catch(() => "missing");
+    if (state === "on" || Date.now() - started > (state === "off" ? BROWSER.optionsMs : BROWSER.optionsMs / 4)) return;
+    await sleep(BROWSER.pollMs);
+  }
+}
+
+/** The rest of a list that only draws the rows in view: it is moved down a screen at a time until `enough`, or its end. */
+async function restOfList(page: Page, selector: string, seen: string[], enough: (opts: string[]) => boolean): Promise<string[]> {
+  const all = [...seen];
+  for (let screen = 0; screen < FORM.maxListScreens && !enough(all); screen++) {
+    if (!(await page.awj<boolean>("scrollOptions", selector))) break;
+    await sleep(BROWSER.pollMs);
+    for (const o of await page.awj<string[]>("options", selector)) if (!all.includes(o)) all.push(o);
+  }
+  return all;
 }
 
 /** With the trace on, the shape of a control whose list did not give the wanted value, taken while the list is still open. */
@@ -174,6 +199,7 @@ async function fillDropdownDirect(page: Page, selector: string, value: string, h
  * Returns why it failed, or null, and which way set it.
  */
 export async function fillDropdown(page: Page, selector: string, value: string, hints: string[], byClicking = false): Promise<{ why: string | null; method: "script" | "clicked" }> {
+  await whenOn(page, selector);
   if (!byClicking) {
     const direct = await fillDropdownDirect(page, selector, value, hints);
     if (direct) return { why: null, method: "script" };
@@ -187,7 +213,9 @@ export function fillDropdownByClicking(page: Page, selector: string, value: stri
   return inFront(page, () => clickAndPick(page, selector, value, hints));
 }
 
-async function clickAndPick(page: Page, selector: string, value: string, hints: string[]): Promise<string | null> {
+async function clickAndPick(page: Page, selector: string, whole: string, hints: string[]): Promise<string | null> {
+  // "Heading > Choice" names a choice in the list a heading opens. The first step is picked here, the rest under it.
+  const [value = whole, ...deeper] = whole.split(CHOICE_PATH);
   if (!(await openDropdown(page, selector))) return "control not found";
   let opts = await waitOptions(page, selector, false);
   if (!opts.length) {
@@ -220,24 +248,38 @@ async function clickAndPick(page: Page, selector: string, value: string, hints: 
   }
   // Finding the option scrolls it into view, and a list drawn beside its box moves with the box a moment later.
   // The point is read again once the page has settled, so the click lands on this row and not the one below.
-  const p = await steadyPoint(page, selector, choice);
-  if (!p.ok) {
-    await closeDropdown(page);
-    return `option "${choice}" could not be clicked`;
+  let shown = "";
+  // One kind of list is pressed on the option itself (see pressOption). If that took, there is nothing to click.
+  if (await page.awj<boolean>("pressOption", selector, choice).catch(() => false)) {
+    // The box takes a moment to show the pick.
+    for (const deadline = Date.now() + BROWSER.optionsMs / 4; Date.now() < deadline && !showsValue(choice, shown); ) {
+      await sleep(BROWSER.pollMs);
+      shown = (await shownValues(page, [selector]))[0] ?? "";
+    }
   }
-  await page.click(p.x, p.y);
-  await sleep(BROWSER.pollMs);
-  let shown = (await shownValues(page, [selector]))[0] ?? "";
+  if (!shown || !showsValue(choice, shown)) {
+    const p = await steadyPoint(page, selector, choice);
+    if (!p.ok) {
+      await closeDropdown(page);
+      return `option "${choice}" could not be clicked`;
+    }
+    await page.click(p.x, p.y);
+    await sleep(BROWSER.pollMs);
+    shown = (await shownValues(page, [selector]))[0] ?? "";
+  }
   // A choice that is a heading opens the list under it (Workday's "How did you hear about us?"). The pick is made
   // there when the wanted value, or the one thing on offer, is in it. Anything else is left for the person, with what was offered.
   for (let level = 0; !shown && level < FORM.maxListLevels; level++) {
-    const under = await waitOptions(page, selector, false);
+    let under = await waitOptions(page, selector, false);
     if (!under.length || under.join("|") === opts.join("|")) break;
-    const next = pickOption(under, value, hints) ?? (under.length === 1 ? (under[0] ?? null) : null);
+    const named = deeper[level];
+    // A long list draws only the rows in view. It is gone through until the wanted choice shows, or to its end.
+    if (under.length > 1) under = await restOfList(page, selector, under, (seen) => pickOption(seen, named ?? value, hints) !== null);
+    const next = named ? pickOption(under, named, hints) : (pickOption(under, value, hints) ?? (under.length === 1 ? (under[0] ?? null) : null));
     if (!next) {
       await sketch(page, selector);
       await closeDropdown(page);
-      return `"${choice}" opens another list, and "${value}" is not in it: ${under.slice(0, 12).join(" | ")}`;
+      return `"${choice}" opens a list of its own${named ? `, and "${named}" is not in it` : ""}. The answer is one of these, written as "${choice} > the one": ${under.slice(0, FORM.maxListed).join(" | ")}`;
     }
     const at = await steadyPoint(page, selector, next);
     if (!at.ok) break;
