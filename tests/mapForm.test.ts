@@ -282,12 +282,55 @@ describe("which document a file box asks for", () => {
 });
 
 
+describe("a choice among a few statements about the person that code cannot check", () => {
+  const yesNo = [{ value: "1", label: "Yes" }, { value: "0", label: "No" }];
+  const pick = (choice: string, confidence: number) => ({ type: "choice", choice, confidence, probabilities: {} }) as never;
+  const j = { id: "x", source: "t", company: "Acme", title: "Software Engineer", url: "https://example.com", ats: "greenhouse", locations: ["Mountain View, CA"], postedAt: null, terms: [], sponsorship: "unknown", degrees: [], category: null, description: "", descriptionSource: "none" } as never;
+  const office = field({ kind: "combobox", label: "This position requires 4 days a week in office. Are you able to meet this requirement?", options: yesNo, required: true });
+
+  it("goes to the writer when JEV only leans one way", () => {
+    expect(planField(office, pick("o1", 0.75), profile, j)).toMatchObject({ action: "review", optionLabel: "No" });
+  });
+
+  it("is filled when JEV is sure", () => {
+    const worked = field({ kind: "radio", label: "Have you worked for Acme before?", options: yesNo, required: true });
+    expect(planField(worked, pick("o1", 0.75), profile, j)).toMatchObject({ action: "review" });
+    expect(planField(worked, pick("o1", 0.9), profile, j)).toMatchObject({ action: "fill", optionLabel: "No" });
+  });
+
+  it("leaves a question about where the person will work to the writer, however sure JEV is", () => {
+    const based = field({ kind: "radio", label: "Are you currently based, or planning to be based in NYC and able to work on-site 3 days a week?", options: yesNo, required: true });
+    expect(planField(based, pick("o1", 0.95), profile, j)).toMatchObject({ action: "review" });
+    const lives = field({ kind: "radio", label: "Are you currently living in the UK?", options: yesNo, required: true });
+    expect(planField(lives, pick("o1", 0.95), profile, j)).toMatchObject({ action: "fill", optionLabel: "No" });
+  });
+
+  it("covers a short list that is not yes or no", () => {
+    const how = field({ kind: "radio", label: "Flexible Working", options: [{ value: "a", label: "In one of our offices" }, { value: "b", label: "Hybrid" }, { value: "c", label: "Fully remote" }], required: true });
+    expect(planField(how, pick("o2", 0.69), profile, j)).toMatchObject({ action: "review" });
+    expect(planField(how, pick("o1", 0.85), profile, j)).toMatchObject({ action: "fill", optionLabel: "Hybrid" });
+  });
+
+  it("leaves a long list at the usual floor", () => {
+    const list = field({ kind: "select", label: "How did you hear about us?", options: ["Job board", "Referral", "LinkedIn", "Career fair", "GitHub", "Event", "Other"].map((label) => ({ value: label, label })) });
+    expect(planField(list, pick("o0", 0.6), profile, j)).toMatchObject({ action: "fill", optionLabel: "Job board" });
+  });
+
+  it("gives a box for first and last name both names, whichever name JEV took it for", () => {
+    const name = field({ label: "Name (first & last)", hint: "Please enter the name you go by day-to-day.", required: true });
+    expect(planField(name, { type: "choice", choice: "preferred_name", probabilities: {}, confidence: 0.73 }, profile, j)).toMatchObject({ action: "fill", key: "full_name", value: `${profile.name.first} ${profile.name.last}` });
+    expect(planField(field({ label: "First name" }), { type: "choice", choice: "first_name", probabilities: {}, confidence: 0.95 }, profile, j)).toMatchObject({ value: profile.name.first });
+  });
+});
+
 describe("a question about needing a work authorization", () => {
   it("is a question about sponsorship, not about being authorized", () => {
     const q = (label: string) => categoryOf({ label, section: "", hint: "", kind: "select" });
     expect(q("Do you require work authorization? (required)")).toBe("sponsorship");
     expect(q("Will you need a work visa to take this job?")).toBe("sponsorship");
     expect(q("Will you now or in the future require sponsorship for employment visa status?")).toBe("sponsorship");
+    expect(q("Will you now or in the future require authorization to work in the United States?")).toBe("sponsorship");
+    expect(categoryOf({ label: "Will you now or in the future require authorization to work in the United States?", section: "Are you legally authorized to work in the United States?", hint: "", kind: "radio" })).toBe("sponsorship");
     expect(q("Are you legally authorized to work in the United States?")).toBe("authorization");
     expect(q("Are you authorized to work in Canada without requiring sponsorship?")).toBe("authorization");
   });
