@@ -523,6 +523,12 @@ export const RUN = {
   submitGapAfterCodeMs: 15_000,
   /** The pause between two submissions to the same site. A burst of applications from one person reads as a robot; one form at a time is most of the pacing already. */
   submitGapMs: 5_000,
+  /** Longer pauses for sites that react to bursts. Greenhouse asked for an emailed code on 7 of 13 forms sent within minutes. */
+  submitGapByHost: { "greenhouse.io": 90_000 } as Record<string, number>,
+  /** The most forms one run takes from the same employer. The rest stay queued for another run. */
+  perEmployerPerRun: 3,
+  /** The pause between two submissions to the same employer, so several of its roles do not arrive within a minute. */
+  employerGapMs: 8 * 60_000,
   /** The most pages of one form the tool will walk. A form that goes on longer is left for the person. */
   maxPages: 8,
   /** How long `resume` watches one waiting form for the person to finish it. */

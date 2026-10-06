@@ -11,6 +11,11 @@ changed for a person using the tool and what changed for a contributor.
 
 ## [Unreleased]
 
+### Changed
+- A run takes at most three roles from one employer, never two in a row, and
+  waits eight minutes between two applications to the same employer.
+  Submissions to Greenhouse are spaced 90 seconds apart.
+
 ### Fixed
 
 - A form that asks "Will you now or in the future require authorization to

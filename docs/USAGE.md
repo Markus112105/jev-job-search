@@ -132,7 +132,7 @@ date. It ranks the job lower and leaves the choice to you.
 
 | Job board | What to expect |
 |---|---|
-| Greenhouse | Works well. After several applications in a short time it sometimes emails a code to confirm a person is applying; that form stays open for you to type the code, and the run goes on. |
+| Greenhouse | Works well. After several applications in a short time it sometimes emails a code to confirm a person is applying; that form stays open for you to type the code, and the run goes on. Submissions to Greenhouse are spaced 90 seconds apart to make that rarer. |
 | Ashby | Works well. Ashby saves each field as you type, so the tool fills these forms one field at a time, and one form at a time. |
 | Lever | Works well. |
 | Rippling, Workable | Works. Tested on a few forms each. |
@@ -141,6 +141,15 @@ date. It ranks the job lower and leaves the choice to you.
 | SmartRecruiters | Not supported yet. The tool cannot read its form. It skips these jobs. |
 | Workday | Off until you allow it with `/accounts`. Then the tool signs in with your account at that employer, or makes one if you said it may, and fills the form page by page. The sign-in is tested against scripted pages only, and Workday's own application pages have not been seen, so rehearse first. See [ACCOUNTS.md](ACCOUNTS.md). |
 | iCIMS, Taleo, Oracle, SuccessFactors, Amazon, LinkedIn, and any other site that wants a sign-in | The tool does not sign in there. It skips these jobs. If it meets a sign-in page during a run, it closes the page, puts the job on your by-hand list, and skips that site from then on. |
+
+#### How it paces itself
+
+One form at a time. Submissions to the same site are spaced a few seconds
+apart, 90 seconds on Greenhouse. When one employer has several open roles,
+a run takes at most three of them, never two in a row, and leaves at least
+eight minutes between two applications to the same employer. The numbers
+are `submitGapByHost`, `perEmployerPerRun` and `employerGapMs` in
+`src/config.ts`.
 
 ### Which parts of a form it fills
 

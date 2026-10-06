@@ -69,12 +69,18 @@ export function takeJobs(ids: string[], o: { count: number; dry: boolean; resubm
 export function pickJobs(entries: QueueEntry[], ids: string[], o: { count: number; dry: boolean; resubmit?: boolean }, gate: (url: string) => string | null = () => null): { picked: QueueEntry[]; refused: { id: string; why: string }[] } {
   if (!ids.length) {
     const picked: QueueEntry[] = [];
+    const perEmployer = new Map<string, number>();
     for (const e of sortEntries(entries.filter((x) => x.status === "queued"))) {
       if (picked.length >= o.count) break;
       // A job that must wait for another day stays in the queue, untouched.
-      if (!gate(e.job.url)) picked.push(e);
+      if (gate(e.job.url)) continue;
+      // Several roles at one employer: a run takes a few and leaves the rest for another day.
+      const key = employerKey(e.job.company);
+      if ((perEmployer.get(key) ?? 0) >= RUN.perEmployerPerRun) continue;
+      perEmployer.set(key, (perEmployer.get(key) ?? 0) + 1);
+      picked.push(e);
     }
-    return { picked, refused: [] };
+    return { picked: interleaveEmployers(picked), refused: [] };
   }
   const picked: QueueEntry[] = [];
   const refused: { id: string; why: string }[] = [];
@@ -89,6 +95,32 @@ export function pickJobs(entries: QueueEntry[], ids: string[], o: { count: numbe
     else picked.push(e);
   }
   return { picked, refused };
+}
+
+/** One employer under its spellings: "DoorDash", "Doordash Canada" and "DoorDash, Inc." pace together. */
+export function employerKey(company: string): string {
+  return company
+    .toLowerCase()
+    .replace(/\b(inc|ltd|llc|corp|corporation|co|company|limited|canada|usa|technologies|labs|group)\b\.?/g, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .trim();
+}
+
+/**
+ * Keeps the order by score but never puts two jobs of one employer next to each other when another
+ * employer's job can go between them. With one form at a time, that alone spreads an employer's
+ * applications over several minutes; `employerGapMs` makes the gap a promise.
+ */
+export function interleaveEmployers(picked: QueueEntry[]): QueueEntry[] {
+  const out: QueueEntry[] = [];
+  const rest = [...picked];
+  while (rest.length) {
+    const last = out.at(-1);
+    const at = last ? rest.findIndex((e) => employerKey(e.job.company) !== employerKey(last.job.company)) : 0;
+    const [next] = rest.splice(at < 0 ? 0 : at, 1);
+    if (next) out.push(next);
+  }
+  return out;
 }
 
 type RowExtra = Partial<Record<"What They Do" | "Why You're a Fit" | "Notes" | "Take-home", string>>;
@@ -219,7 +251,21 @@ const keepTab = (id: string, state: "awaiting_user_action" | "awaiting_email_ver
  * Submissions to one site are spaced out, and only one form is being sent at any moment. A burst
  * from one person reads as a robot. A site known to answer bursts with an emailed code gets a longer pause.
  */
-const perSite = spacer((site) => (Object.entries(loadKnowledge().sites).some(([host, s]) => s.emailsCode && host.endsWith(site)) ? RUN.submitGapAfterCodeMs : RUN.submitGapMs));
+const perSite = spacer((site) => {
+  const afterCode = Object.entries(loadKnowledge().sites).some(([host, s]) => s.emailsCode && host.endsWith(site)) ? RUN.submitGapAfterCodeMs : RUN.submitGapMs;
+  const byHost = Object.entries(RUN.submitGapByHost).find(([host]) => site === host || site.endsWith("." + host))?.[1] ?? 0;
+  return Math.max(afterCode, byHost);
+});
+/** Submissions to one employer are spaced further apart than submissions to one site. */
+const perEmployer = spacer(RUN.employerGapMs);
+const employerOf = (id: string) => {
+  try {
+    const e = loadQueue().entries.find((x) => x.job.id === id);
+    return e ? employerKey(e.job.company) : id;
+  } catch {
+    return id;
+  }
+};
 const oneAtATime = limiter(1);
 const siteOf = (id: string) => {
   try {
@@ -238,6 +284,10 @@ const siteOf = (id: string) => {
  * filled or sent again until `reconcile` or the person settles it.
  */
 export function submitAndRecord(jev: JevClient, id: string, force: boolean, keepOpen = false): Promise<boolean> {
+  return perEmployer(employerOf(id), () => submitAndRecordOnSite(jev, id, force, keepOpen));
+}
+
+function submitAndRecordOnSite(jev: JevClient, id: string, force: boolean, keepOpen: boolean): Promise<boolean> {
   return perSite(siteOf(id), () =>
     oneAtATime(async () => {
       let clicked = false;
