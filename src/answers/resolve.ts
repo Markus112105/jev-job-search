@@ -1,11 +1,11 @@
 /**
- * What JEV leaves open goes to Claude: questions that need writing, fields it
- * was unsure of, and values the page refused. Claude Code runs headless with
- * no tools, reads the candidate's facts and the open fields, and returns one
- * JSON object. It may also say the job should not be applied to, with a reason.
+ * What JEV leaves open goes to the configured writer: questions that need writing, fields it was
+ * unsure of, and values the page refused. The writer reads the candidate's facts and the open
+ * fields, then returns one JSON object. It may also say the job should not be applied to.
  */
 import { spawn } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { childEnv, DOCUMENTS, PATHS, WRITER, writerBackend } from "../config.js";
 import type { QueueEntry } from "../jobs/queue.js";
@@ -23,6 +23,7 @@ const SYSTEM = [
   "Truth comes first.",
   "- Use only the candidate's facts, experience, projects, standing answers and the job posting. Never invent a fact, a number, a skill level, a date or a credential.",
   "- Work authorization, citizenship, education and dates are exactly as given. The candidate is authorized only in the countries listed and needs sponsorship elsewhere.",
+  "- For a question that says the country where the role is located, use job.locationTier. A value of us means the country is the United States. For remote or unclear, do not infer a country unless the posting states one.",
   "- If a required field cannot be answered truthfully from the facts (a residence the candidate does not have, a self-rating of a skill the facts do not mention, a quiz or take-home, a clearance, a reference's contact details), do not guess: set verdict to \"needs_review\" and say which field in reason.",
   "- needs_review is only for that. When the facts or a standing answer reasonably settle a field, answer it and keep the verdict \"ready\". A person who is not employed has no notice period, so the shortest option is true.",
   "- Never sign for the candidate. A field that asks them to type their name to agree to an NDA or any other contract, and any NDA, is left unanswered and the verdict is \"needs_review\". A checkbox that acknowledges an agreement, a notice or terms follows the standing answers.",
@@ -130,14 +131,14 @@ export type WriterCall = { at: string; purpose: "resolve" | "log" | "tailor"; jo
 export const writerUsage = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
 
 type Usage = { input_tokens?: number | undefined; cache_creation_input_tokens?: number | undefined; cache_read_input_tokens?: number | undefined; output_tokens?: number | undefined };
-type Envelope = { result?: string; is_error?: boolean; total_cost_usd?: number; duration_ms?: number; usage?: Usage | undefined };
+type Envelope = { result?: string; is_error?: boolean; total_cost_usd?: number; duration_ms?: number; usage?: Usage | undefined; model?: string | undefined };
 
 function recordWriterCall(envelope: Envelope, meta: { purpose: WriterCall["purpose"]; jobId: string }): void {
   const u = envelope.usage ?? {};
   const call: WriterCall = {
     at: new Date().toISOString(),
     ...meta,
-    model: WRITER.model,
+    model: envelope.model ?? WRITER.model,
     inputTokens: u.input_tokens ?? 0,
     cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
     cacheReadTokens: u.cache_read_input_tokens ?? 0,
@@ -217,8 +218,55 @@ async function callApi(prompt: string, system: string, meta: { purpose: WriterCa
   return text;
 }
 
+/** Codex runs as a text-only, ephemeral writer using the person's existing ChatGPT login. */
+function callCodex(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
+  return new Promise((resolve, reject) => {
+    mkdirSync(WRITER.cwd, { recursive: true });
+    const runDir = mkdtempSync(path.join(WRITER.cwd, "codex-"));
+    const outputFile = path.join(runDir, "last-message.txt");
+    const cleanup = () => rmSync(runDir, { recursive: true, force: true });
+    const child = spawn(
+      WRITER.codexCommand,
+      ["exec", "--ignore-user-config", "--ignore-rules", "--ephemeral", "--skip-git-repo-check", "--sandbox", "read-only", "--color", "never", "--output-last-message", outputFile, "-"],
+      { stdio: ["pipe", "ignore", "pipe"], cwd: WRITER.cwd, env: childEnv() },
+    );
+    let err = "";
+    const started = Date.now();
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      cleanup();
+      reject(new Error(`the writer did not answer in ${WRITER.timeoutMs / 1000}s`));
+    }, WRITER.timeoutMs);
+    child.stderr.on("data", (d: Buffer) => (err += d.toString()));
+    child.on("error", (e) => {
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error(`could not run ${WRITER.codexCommand}: ${e.message}. Codex must be installed and logged in.`));
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code !== 0) {
+        cleanup();
+        return reject(new Error(`the writer exited with ${code}: ${err.slice(0, 300)}`));
+      }
+      try {
+        const text = readFileSync(outputFile, "utf8").trim();
+        recordWriterCall({ result: text, model: "codex", duration_ms: Date.now() - started }, meta);
+        resolve(text);
+      } catch (error) {
+        reject(new Error(`could not read the writer's answer: ${error instanceof Error ? error.message : String(error)}`));
+      } finally {
+        cleanup();
+      }
+    });
+    child.stdin.end(`${system}\n\nTask input:\n${prompt}\n\nReturn only the requested final answer. Do not use tools.`);
+  });
+}
+
 function callWriter(prompt: string, system: string, meta: { purpose: WriterCall["purpose"]; jobId: string }): Promise<string> {
-  if (writerBackend() === "api") return callApi(prompt, system, meta);
+  const backend = writerBackend();
+  if (backend === "api") return callApi(prompt, system, meta);
+  if (backend === "codex") return callCodex(prompt, system, meta);
   return new Promise((resolve, reject) => {
     mkdirSync(WRITER.cwd, { recursive: true });
     const child = spawn(

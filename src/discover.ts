@@ -30,7 +30,7 @@ import { fetchLeverBoard } from "./sources/ats/lever.js";
 import { boardsFromJobs, type Board } from "./sources/companies.js";
 import { fetchReadmeSources } from "./sources/githubReadme.js";
 import { fetchSimplify } from "./sources/simplify.js";
-import { importSheet } from "./sources/sheetImport.js";
+import { importSheet, loadTrackedApplications, trackedApplicationFor } from "./sources/sheetImport.js";
 import { mapLimit } from "./util/http.js";
 
 export const EARLY_CAREER_TITLE = /\b(intern|internship|co-?op|new grad|new graduate|early career|early-career|entry[- ]level|junior|graduate|university|student|campus|associate software|software engineer i\b|engineer i\b|swe i\b)\b/i;
@@ -171,6 +171,7 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   const began = new Date().toISOString();
   const previous = loadQueue();
   const prevById = new Map(previous.entries.map((e) => [e.job.id, e]));
+  const trackedApplications = loadTrackedApplications(PATHS.imports);
 
   const gradYear = profile.education[0]?.gradYear;
   const all = await collectJobs({ ...opts, ...(gradYear !== undefined ? { gradYear } : {}) });
@@ -186,7 +187,10 @@ export async function discover(profile: Profile, jev: JevClient, opts: DiscoverO
   // An account board counts when the person has an account there or allowed one, even if today's limit of new accounts is used up.
   const withAccount = (url: string) => (capabilityFor(url)?.verdict ?? "no") !== "no";
   for (const job of all) {
-    const reason = preFilter(job, now, (url) => isWalled(url, learned), us, opts.maxAgeDays, withAccount);
+    const tracked = trackedApplicationFor(job, trackedApplications);
+    const reason = tracked
+      ? tracked.status === "submitted" ? "already submitted (imported history)" : "application already in progress (imported history)"
+      : preFilter(job, now, (url) => isWalled(url, learned), us, opts.maxAgeDays, withAccount, profile.preferences.allowedLocationTiers);
     if (reason) decided.push({ job, fit: null, reason });
     else kept.push(job);
   }

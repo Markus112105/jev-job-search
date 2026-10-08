@@ -136,10 +136,26 @@ export async function rateJob(jev: JevClient, job: Job, profile: Profile, now = 
     answers = await jev.decide(buildFitState(job, profile, now), fitQuestions(profile), `rate:${job.company}:${job.title}`);
     cache?.set(key, answers);
   }
-  return scoreFromAnswers(job, answers, now, usStatus(profile));
+  const allowedLocationTiers = profile.preferences.allowedLocationTiers;
+  const allowedTerms = profile.preferences.allowedTerms;
+  return scoreFromAnswers(job, answers, now, usStatus(profile), {
+    ...(allowedLocationTiers ? { allowedLocationTiers } : {}),
+    ...(allowedTerms ? { allowedTerms } : {}),
+  });
 }
 
-export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now = new Date(), us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false }): FitResult {
+type SearchLimits = {
+  allowedLocationTiers?: readonly LocationTier[];
+  allowedTerms?: readonly ("summer" | "new_grad" | "winter" | "earlier" | "other")[];
+};
+
+export function scoreFromAnswers(
+  job: Job,
+  answers: Record<string, Answer>,
+  now = new Date(),
+  us: { authorized: boolean; citizen: boolean } = { authorized: false, citizen: false },
+  limits: SearchLimits = {},
+): FitResult {
   // A rating saved before a question existed simply lacks it; that reads as "no".
   const n = (k: string) => (answers[k] as NoulAnswer | undefined)?.noul ?? 0;
   const c = (k: string) => answers[k] as ChoiceAnswer;
@@ -148,9 +164,12 @@ export function scoreFromAnswers(job: Job, answers: Record<string, Answer>, now 
 
   const codeTier = locationTier(job.locations);
   const tier: LocationTier = codeTier !== "unclear" ? codeTier : (c("location_tier").choice as LocationTier);
+  const term = c("term").choice as "summer" | "new_grad" | "winter" | "earlier" | "other";
 
   let skipReason: string | null = null;
-  if (n("is_software_role") < 0.5) skipReason = "not a software role";
+  if (limits.allowedLocationTiers && !limits.allowedLocationTiers.includes(tier)) skipReason = `location not wanted (${tier})`;
+  else if (limits.allowedTerms && !limits.allowedTerms.includes(term)) skipReason = `term not wanted (${term})`;
+  else if (n("is_software_role") < 0.5) skipReason = "not a software role";
   else if (c("level").choice === "experienced" && c("level").confidence >= 0.6) skipReason = "requires professional experience";
   else if (n("is_unpaid") > 0.7) skipReason = "unpaid";
   else if (n("needs_advanced_degree") > 0.7) skipReason = "advanced degree required";

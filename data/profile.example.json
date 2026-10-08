@@ -110,6 +110,15 @@
   "preferences": {
     "earliestStart": "May 2027",
     "availability": "Available for 4, 8, 12 or 16 month terms",
+    "allowedLocationTiers": [
+      "vancouver",
+      "canada",
+      "remote"
+    ],
+    "allowedTerms": [
+      "summer",
+      "new_grad"
+    ],
     "salaryExpectation": "",
     "willingToRelocate": "yes",
     "remote": "preferred",

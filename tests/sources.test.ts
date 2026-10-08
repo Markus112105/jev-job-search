@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseReadmeTable } from "../src/sources/githubReadme.js";
 import { parseSimplify } from "../src/sources/simplify.js";
-import { parseSheetCsv } from "../src/sources/sheetImport.js";
+import { parseSheetCsv, parseTrackedApplications, trackedApplicationFor } from "../src/sources/sheetImport.js";
 import { greenhouseJobId, greenhouseSlug } from "../src/sources/ats/greenhouse.js";
 import { ashbyJobId, ashbySlug } from "../src/sources/ats/ashby.js";
 import { leverJobId, leverSlug } from "../src/sources/ats/lever.js";
@@ -60,6 +60,13 @@ describe("sheet import", () => {
     const jobs = parseSheetCsv(csv);
     expect(jobs).toHaveLength(1);
     expect(jobs[0]).toMatchObject({ company: "Stripe", title: "Software Engineer New Grad", ats: "greenhouse", source: "sheet" });
+  });
+  it("uses link-free tracker rows to avoid the same company, role and term", () => {
+    const tracked = parseTrackedApplications("Company,Position,Term,Application Status\r\nPintrest,SWE,Summer 27,Submitted\r\nTesla,SWE Intern,Winter 27,In Progress\r\n");
+    const base = { id: "x", source: "test", company: "Pinterest", title: "Software Engineer Intern", url: "https://x/1", ats: "other" as const, locations: ["San Francisco, CA"], postedAt: null, terms: ["Summer 2027"], sponsorship: "unknown" as const, degrees: [], category: null };
+    expect(trackedApplicationFor(base, tracked)?.status).toBe("submitted");
+    expect(trackedApplicationFor({ ...base, company: "Tesla", title: "Software Engineer Intern - Data Transformations", terms: ["Winter 2027"] }, tracked)).toBeNull();
+    expect(trackedApplicationFor({ ...base, terms: ["Winter 2027"] }, tracked)).toBeNull();
   });
 });
 

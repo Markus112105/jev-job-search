@@ -33,7 +33,8 @@ export function locationTier(locations: string[]): LocationTier {
   const all = locations.join(" | ");
   if (/vancouver|burnaby|richmond, bc|surrey, bc/i.test(all)) return "vancouver";
   if (CA_PROVINCE.test(all)) return "canada";
-  if (/remote/i.test(all) && !/remote.*(us|united states|usa)\b/i.test(all)) return "remote";
+  // A posting with named U.S. offices plus "Remote" is still a U.S. role. Check those offices
+  // before treating a bare Remote label as globally remote.
   if (US_STATE.test(all) || US_CITY.test(all)) return "us";
   if (/remote/i.test(all)) return "remote";
   if (all.trim() === "") return "unclear";
@@ -49,6 +50,8 @@ export function preFilter(
   maxAgeDays: number = DISCOVER.maxAgeDays,
   /** True for a job on an account board where the person has an account, or let the tool make one. */
   mayApplyWithAccount: (url: string) => boolean = () => false,
+  /** Known location tiers the candidate wants. An omitted list preserves the original unrestricted search. */
+  allowedLocationTiers?: readonly LocationTier[],
 ): string | null {
   if (job.ats === "workday" && !mayApplyWithAccount(job.url)) return "workday (needs an account per company)";
   if (job.ats === "taleo" || job.ats === "oracle" || job.ats === "successfactors" || job.ats === "icims" || job.ats === "amazon") {
@@ -66,6 +69,7 @@ export function preFilter(
     return "advanced degree required";
   }
   const tier = locationTier(job.locations);
+  if (allowedLocationTiers && !allowedLocationTiers.includes(tier)) return `location not wanted (${tier})`;
   if (tier === "us" && job.sponsorship === "none" && !us.authorized) return "US role, no sponsorship";
   if (tier === "us" && job.sponsorship === "citizenship" && !us.citizen) return "US citizenship required";
   if (/\bunpaid\b|volunteer/i.test(job.title)) return "unpaid";

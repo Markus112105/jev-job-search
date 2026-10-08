@@ -18,6 +18,8 @@ export function jobContext(entry: QueueEntry | null) {
         url: entry.job.url,
         description: (entry.job.description ?? "").slice(0, WRITER.maxDescriptionChars),
         fitReasons: entry.fit?.reasons ?? [],
+        /** The discovery pipeline has already normalized city and state names into this country-level tier. */
+        locationTier: entry.fit?.locationTier ?? "unclear",
       }
     : null;
 }

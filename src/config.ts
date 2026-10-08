@@ -260,11 +260,12 @@ export const BROWSER = {
 
 /**
  * The writer for what JEV cannot type: open questions, and fields it was unsure of.
- * By default it is Claude Code itself, run headless, so it uses the person's own subscription and
- * no API key. With ANTHROPIC_API_KEY in .env the Claude API is called directly instead.
+ * Claude Code remains the default. Codex can use the person's existing ChatGPT sign-in, while an
+ * ANTHROPIC_API_KEY selects the Claude API unless WRITER_BACKEND explicitly chooses a backend.
  */
 export const WRITER = {
   command: "claude",
+  codexCommand: "codex",
   model: "claude-sonnet-5-5",
   effort: "low",
   timeoutMs: 180_000,
@@ -471,16 +472,15 @@ export const REPORT = {
   statuses: ["applied", "needs_review", "queued", "skipped", "blocked", "failed"],
 } as const;
 
-export type WriterBackend = "claude-code" | "api";
+export type WriterBackend = "claude-code" | "codex" | "api";
 
 /**
- * How Claude is reached. Claude Code runs headless on the person's own subscription and is the
- * default. With ANTHROPIC_API_KEY in .env the Claude API is called directly and billed to that key.
- * WRITER_BACKEND=claude-code in .env keeps Claude Code even when a key is present.
+ * How the writer is reached. Claude Code is the default to preserve the original workflow. Codex
+ * runs non-interactively on the person's ChatGPT sign-in. The Claude API is billed to its own key.
  */
 export function writerBackend(): WriterBackend {
   const asked = (process.env.WRITER_BACKEND ?? "").trim();
-  if (asked === "claude-code" || asked === "api") return asked;
+  if (asked === "claude-code" || asked === "codex" || asked === "api") return asked;
   return process.env.ANTHROPIC_API_KEY ? "api" : "claude-code";
 }
 

@@ -1,8 +1,6 @@
 /**
  * `doctor`: checks everything a run needs and names the one thing to do next.
- * The setup skill runs it after every step, so a person never has to work out
- * what is missing. With `online` it also makes one tiny JEV call and one tiny
- * Claude Code call to prove the key and the sign-in work.
+ * With `online` it also makes one tiny JEV call and one tiny writer call to prove both connections.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
@@ -39,14 +37,19 @@ export function checkChrome(file: string = BROWSER.chromePath): Check {
   return { name: "Google Chrome", ok: existsSync(file), detail: existsSync(file) ? "installed" : `not found at ${file}`, fix: "Install Google Chrome from https://www.google.com/chrome, or set BROWSER.chromePath in src/config.ts" };
 }
 
-/** How Claude is reached: Claude Code on the person's subscription, or the Claude API on their own key. */
-export function checkClaude(): Check {
-  if (writerBackend() === "api") {
-    return { name: "Claude", ok: true, detail: `the Claude API, billed to ANTHROPIC_API_KEY in .env (${WRITER.model})`, fix: "" };
+/** The configured writer must be installed or have the API key it needs. */
+export function checkWriter(): Check {
+  const backend = writerBackend();
+  if (backend === "api") {
+    return { name: "Writer", ok: true, detail: `Claude API, billed to ANTHROPIC_API_KEY in .env (${WRITER.model})`, fix: "" };
   }
-  const r = spawnSync(WRITER.command, ["--version"], { encoding: "utf8", env: childEnv() });
+  const command = backend === "codex" ? WRITER.codexCommand : WRITER.command;
+  const r = spawnSync(command, ["--version"], { encoding: "utf8", env: childEnv() });
   const ok = r.status === 0;
-  return { name: "Claude", ok, detail: ok ? `Claude Code ${r.stdout.trim()} on your subscription` : "the claude command was not found", fix: "Install Claude Code from https://code.claude.com and run `claude` once to sign in, or put ANTHROPIC_API_KEY in .env to use the Claude API instead" };
+  if (backend === "codex") {
+    return { name: "Writer", ok, detail: ok ? `${r.stdout.trim()} using your ChatGPT sign-in` : "the codex command was not found", fix: "Install Codex, run `codex login`, and keep WRITER_BACKEND=codex in .env" };
+  }
+  return { name: "Writer", ok, detail: ok ? `Claude Code ${r.stdout.trim()} on your subscription` : "the claude command was not found", fix: "Install Claude Code from https://code.claude.com and run `claude` once to sign in, or set WRITER_BACKEND=codex to use Codex" };
 }
 
 export function checkKey(key = process.env.OPENROUTER_API_KEY ?? ""): Check {
@@ -132,14 +135,23 @@ export async function checkKeyOnline(): Promise<Check> {
   }
 }
 
-/** One tiny Claude call: proves the sign-in or the key works and the writer's model is available. */
-export async function checkClaudeOnline(): Promise<Check> {
-  if (writerBackend() === "api") {
+/** One tiny writer call proves the selected backend can answer. */
+export async function checkWriterOnline(): Promise<Check> {
+  const backend = writerBackend();
+  if (backend === "api") {
     try {
       const text = await askWriter("ok?", "Reply with the single word ok.");
-      return { name: "Claude answers", ok: /ok/i.test(text), detail: `the Claude API, ${WRITER.model}`, fix: "Check ANTHROPIC_API_KEY in .env at https://console.anthropic.com" };
+      return { name: "Writer answers", ok: /ok/i.test(text), detail: `Claude API, ${WRITER.model}`, fix: "Check ANTHROPIC_API_KEY in .env at https://console.anthropic.com" };
     } catch (err) {
-      return { name: "Claude answers", ok: false, detail: (err instanceof Error ? err.message : String(err)).slice(0, 200), fix: "Check ANTHROPIC_API_KEY in .env at https://console.anthropic.com" };
+      return { name: "Writer answers", ok: false, detail: (err instanceof Error ? err.message : String(err)).slice(0, 200), fix: "Check ANTHROPIC_API_KEY in .env at https://console.anthropic.com" };
+    }
+  }
+  if (backend === "codex") {
+    try {
+      const text = await askWriter("ok?", "Reply with the single word ok.");
+      return { name: "Writer answers", ok: /^ok\.?$/i.test(text.trim()), detail: "Codex signed in through ChatGPT", fix: "Run `codex login` and complete the browser sign-in" };
+    } catch (err) {
+      return { name: "Writer answers", ok: false, detail: (err instanceof Error ? err.message : String(err)).slice(0, 200), fix: "Run `codex login` and complete the browser sign-in" };
     }
   }
   const fix = "Run `claude` once in a terminal and sign in";
@@ -147,20 +159,20 @@ export async function checkClaudeOnline(): Promise<Check> {
   try {
     const envelope = JSON.parse(r.stdout) as { is_error?: boolean; result?: string };
     const ok = r.status === 0 && !envelope.is_error;
-    return { name: "Claude answers", ok, detail: ok ? `Claude Code signed in, ${WRITER.model} at ${WRITER.effort} effort` : String(envelope.result).slice(0, 200), fix };
+    return { name: "Writer answers", ok, detail: ok ? `Claude Code signed in, ${WRITER.model} at ${WRITER.effort} effort` : String(envelope.result).slice(0, 200), fix };
   } catch {
-    return { name: "Claude answers", ok: false, detail: (r.stderr || "no answer").slice(0, 200), fix };
+    return { name: "Writer answers", ok: false, detail: (r.stderr || "no answer").slice(0, 200), fix };
   }
 }
 
 export async function runChecks(online: boolean): Promise<Check[]> {
   const { check: profileCheck, profile } = checkProfile();
-  const claude = checkClaude();
+  const writer = checkWriter();
   const key = checkKey();
-  const checks = [checkNode(), checkChrome(), claude, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue(), checkAccounts()];
+  const checks = [checkNode(), checkChrome(), writer, key, profileCheck, checkResume(profile), ...checkOwnWords(), checkQueue(), checkAccounts()];
   if (online) {
     if (key.ok) checks.push(await checkKeyOnline());
-    if (claude.ok) checks.push(await checkClaudeOnline());
+    if (writer.ok) checks.push(await checkWriterOnline());
   }
   return checks;
 }

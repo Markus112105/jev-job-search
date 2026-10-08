@@ -22,6 +22,10 @@ describe("how Claude is reached", () => {
     process.env.WRITER_BACKEND = "claude-code";
     expect(writerBackend()).toBe("claude-code");
   });
+  it("can use Codex through the existing ChatGPT sign-in", () => {
+    process.env.WRITER_BACKEND = "codex";
+    expect(writerBackend()).toBe("codex");
+  });
   it("prices an API call from its token counts", () => {
     expect(apiCostUsd({ input_tokens: 1_000_000 })).toBeCloseTo(3, 5);
     expect(apiCostUsd({ cache_read_input_tokens: 1_000_000, output_tokens: 100_000 })).toBeCloseTo(0.3 + 1.5, 5);

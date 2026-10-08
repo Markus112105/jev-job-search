@@ -23,6 +23,7 @@ describe("locationTier", () => {
     [["SF"], "us"],
     [["NYC"], "us"],
     [["Palo Alto, CA"], "us"],
+    [["San Mateo", "New York", "Remote"], "us"],
     [["London, UK"], "international"],
     [[], "unclear"],
   ])("%j → %s", (locs, tier) => {
@@ -33,6 +34,9 @@ describe("locationTier", () => {
 describe("preFilter", () => {
   it("passes a fresh Canadian software internship", () => {
     expect(preFilter(job(), now)).toBeNull();
+  });
+  it("rejects a known location tier outside the candidate's allowed list", () => {
+    expect(preFilter(job(), now, () => false, { authorized: true, citizen: true }, DISCOVER.maxAgeDays, () => false, ["us", "remote", "unclear"])).toBe("location not wanted (canada)");
   });
   it("rejects account-walled ATSs", () => {
     expect(preFilter(job({ ats: "workday" }), now)).toMatch(/workday/);
@@ -117,6 +121,12 @@ describe("scoreFromAnswers", () => {
     expect(scoreFromAnswers(job({ locations: ["SF"] }), answers({ work_auth: { choice: "us_citizenship_required", confidence: 0.8 } }), now, { authorized: true, citizen: true }).skipReason).toBeNull();
     expect(scoreFromAnswers(job(), answers({ requires_references: { noul: 0.95 } }), now).skipReason).toMatch(/references/);
   });
+  it("skips locations and terms outside profile search limits", () => {
+    const limits = { allowedLocationTiers: ["us"] as const, allowedTerms: ["winter", "new_grad"] as const };
+    expect(scoreFromAnswers(job(), answers(), now, { authorized: true, citizen: true }, limits).skipReason).toMatch(/location/);
+    expect(scoreFromAnswers(job({ locations: ["NYC"] }), answers(), now, { authorized: true, citizen: true }, limits).skipReason).toMatch(/term/);
+    expect(scoreFromAnswers(job({ locations: ["NYC"] }), answers({ term: { choice: "winter" } }), now, { authorized: true, citizen: true }, limits).skipReason).toBeNull();
+  });
   it("only trusts the account signal when the ATS is unknown", () => {
     expect(scoreFromAnswers(job({ ats: "greenhouse" }), answers({ needs_account: { noul: 0.95 } }), now).skipReason).toBeNull();
     expect(scoreFromAnswers(job({ ats: "other" }), answers({ needs_account: { noul: 0.95 } }), now).skipReason).toMatch(/account/);
@@ -167,4 +177,3 @@ describe("usStatus", () => {
     expect(usStatus(wa(["USA", "Canada"], ["U.S."]))).toEqual({ authorized: true, citizen: true });
   });
 });
-

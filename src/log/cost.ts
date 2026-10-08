@@ -1,7 +1,7 @@
 /**
  * What the tool spends. Two usage logs feed it: data/runs/jev-usage.jsonl
  * (every JEV call, written by JevClient) and data/runs/writer-usage.jsonl
- * (every headless Claude Code call, written by the writer). The summary is
+ * (every configured writer call). The summary is
  * pure, so the same numbers can be printed after a run or over all time.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -85,7 +85,8 @@ const usd = (n: number) => `$${n.toFixed(n < 0.01 ? 5 : n < 1 ? 4 : 2)}`;
 
 export function formatCost(c: CostSummary): string {
   const row = (name: string, b: Bucket) => `  ${name.padEnd(12)} ${String(b.calls).padStart(5)} calls  ${String(b.inputTokens).padStart(9)} in  ${String(b.outputTokens).padStart(8)} out  ${usd(b.costUsd)}`;
-  const api = writerBackend() === "api";
+  const backend = writerBackend();
+  const api = backend === "api";
   const lines = ["JEV (billed to your OpenRouter key)"];
   for (const [k, b] of Object.entries(c.jev)) lines.push(row(k, b));
   const claudeCalls = Object.values(c.claude).reduce((n, b) => n + b.calls, 0);
@@ -94,7 +95,8 @@ export function formatCost(c: CostSummary): string {
     for (const [k, b] of Object.entries(c.claude)) lines.push(row(k, b));
     if (!claudeCalls) lines.push("  no calls recorded");
   } else {
-    lines.push(`Claude: ${claudeCalls} call(s) through Claude Code on your subscription, no separate bill`);
+    const name = backend === "codex" ? "Codex" : "Claude";
+    lines.push(`${name}: ${claudeCalls} call(s) through ${name} on your subscription, no separate bill`);
   }
   lines.push(`Forms: ${c.forms}`);
   if (c.forms) {

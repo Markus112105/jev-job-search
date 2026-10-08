@@ -49,7 +49,7 @@ describe("the writer's prompt", () => {
   });
   it("includes the posting when there is one", () => {
     const entry = { job: { id: "j", source: "s", company: "Acme", title: "SWE Intern", url: "https://x/1", ats: "greenhouse", locations: ["Toronto, ON"], postedAt: null, terms: [], sponsorship: "unknown", degrees: [], category: null, description: "We build rockets." }, fit: null, preFilterReason: null, status: "queued", statusReason: null, attempts: 0, discoveredAt: "", updatedAt: "", appliedAt: null, notes: null } as unknown as Parameters<typeof buildPrompt>[0];
-    expect(JSON.parse(buildPrompt(entry, [], open)).job).toMatchObject({ company: "Acme", description: "We build rockets." });
+    expect(JSON.parse(buildPrompt(entry, [], open)).job).toMatchObject({ company: "Acme", description: "We build rockets.", locationTier: "unclear" });
   });
   it("carries no secret and no resume path", () => {
     const text = system + JSON.stringify(prompt);

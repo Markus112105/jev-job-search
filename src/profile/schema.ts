@@ -116,6 +116,10 @@ export const ProfileSchema = z.object({
   preferences: z.object({
     earliestStart: z.string(),
     availability: z.string(),
+    /** Location tiers the search may queue. Omit to allow every tier. */
+    allowedLocationTiers: z.array(z.enum(["vancouver", "canada", "remote", "us", "international", "unclear"])).optional(),
+    /** Job terms the search may queue. Omit to allow every term. */
+    allowedTerms: z.array(z.enum(["summer", "new_grad", "winter", "earlier", "other"])).optional(),
     /** Left empty on purpose: the tool never volunteers a number. */
     salaryExpectation: z.string(),
     /** What goes in a salary box that will not submit empty, when salaryExpectation is empty. */
